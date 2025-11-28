@@ -165,20 +165,35 @@ class KuCoinFuturesClient:
     async def get_positions(self) -> list[Position]:
         """Get all open positions."""
         result = await self._request("GET", "/api/v1/positions")
-        positions = []
-        for pos in result.get("data", []):
-            if pos.get("isOpen"):
-                positions.append(
-                    Position(
-                        symbol=pos["symbol"],
-                        side="long" if pos["currentQty"] > 0 else "short",
-                        size=abs(pos["currentQty"]),
-                        entry_price=pos.get("avgEntryPrice", 0),
-                        leverage=pos.get("realLeverage", 1),
-                        unrealized_pnl=pos.get("unrealisedPnl", 0),
-                        margin=pos.get("posMargin", 0),
-                    )
+        positions: list[Position] = []
+        data = result.get("data")
+        if not isinstance(data, list):
+            return positions
+
+        for pos in data:
+            if not isinstance(pos, dict):
+                continue
+            if not pos.get("isOpen"):
+                continue
+
+            # Safely extract required fields with defaults
+            symbol = pos.get("symbol")
+            current_qty = pos.get("currentQty", 0)
+
+            if not symbol:
+                continue
+
+            positions.append(
+                Position(
+                    symbol=symbol,
+                    side="long" if current_qty > 0 else "short",
+                    size=abs(current_qty),
+                    entry_price=float(pos.get("avgEntryPrice", 0)),
+                    leverage=int(pos.get("realLeverage", 1)),
+                    unrealized_pnl=float(pos.get("unrealisedPnl", 0)),
+                    margin=float(pos.get("posMargin", 0)),
                 )
+            )
         return positions
 
     async def place_order(

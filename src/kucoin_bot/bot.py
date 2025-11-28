@@ -102,12 +102,22 @@ class KuCoinFuturesBot:
             if not klines:
                 return
 
-            # Extract prices and volumes
-            prices = [float(k[2]) for k in klines]  # Close prices
-            volumes = [float(k[5]) for k in klines]  # Volumes
+            # Safely extract prices and volumes
+            # Each kline is expected to be [time, open, close, high, low, volume, ...]
+            prices: list[float] = []
+            volumes: list[float] = []
 
-            self._price_cache[symbol] = prices
-            self._volume_cache[symbol] = volumes
+            for k in klines:
+                if isinstance(k, list) and len(k) >= 6:
+                    try:
+                        prices.append(float(k[2]))  # Close price
+                        volumes.append(float(k[5]))  # Volume
+                    except (ValueError, TypeError):
+                        continue
+
+            if prices and volumes:
+                self._price_cache[symbol] = prices
+                self._volume_cache[symbol] = volumes
 
         except Exception as e:
             logger.error(f"Failed to update market data for {symbol}: {e}")

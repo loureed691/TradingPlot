@@ -41,14 +41,26 @@ class MarketAnalyzer:
 
             # Get 24h high/low for volatility calculation
             klines = await self.client.get_klines(symbol, granularity=60)
+            high_24h = price
+            low_24h = price
+
             if klines and len(klines) > 0:
-                highs = [float(k[3]) for k in klines[-24:]]  # High prices
-                lows = [float(k[4]) for k in klines[-24:]]  # Low prices
-                high_24h = max(highs) if highs else price
-                low_24h = min(lows) if lows else price
-            else:
-                high_24h = price
-                low_24h = price
+                # Safely extract high and low prices from klines
+                # Each kline is expected to be [time, open, close, high, low, volume, ...]
+                highs: list[float] = []
+                lows: list[float] = []
+                for k in klines[-24:]:
+                    if isinstance(k, list) and len(k) >= 5:
+                        try:
+                            highs.append(float(k[3]))
+                            lows.append(float(k[4]))
+                        except (ValueError, TypeError):
+                            continue
+
+                if highs:
+                    high_24h = max(highs)
+                if lows:
+                    low_24h = min(lows)
 
             # Calculate volatility as (high - low) / price
             volatility = (high_24h - low_24h) / price if price > 0 else 0
