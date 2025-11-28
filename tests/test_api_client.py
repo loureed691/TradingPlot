@@ -122,3 +122,25 @@ class TestKuCoinFuturesClient:
         )
         client = KuCoinFuturesClient(config)
         assert client.base_url == KuCoinFuturesClient.PRODUCTION_URL
+
+    def test_default_currency_configuration(self):
+        """Test default currency is set in APIConfig."""
+        config = APIConfig(
+            api_key="test",
+            api_secret="test",
+            api_passphrase="test",
+            sandbox=True,
+        )
+        # Default should be USDT
+        assert config.default_currency == "USDT"
+
+    def test_custom_currency_configuration(self):
+        """Test custom currency can be set in APIConfig."""
+        config = APIConfig(
+            api_key="test",
+            api_secret="test",
+            api_passphrase="test",
+            sandbox=True,
+            default_currency="XBT",
+        )
+        assert config.default_currency == "XBT"

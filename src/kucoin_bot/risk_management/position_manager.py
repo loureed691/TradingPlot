@@ -41,10 +41,19 @@ class PortfolioState:
 class PositionManager:
     """Manages trading positions and portfolio."""
 
-    def __init__(self, client: KuCoinFuturesClient, config: RiskConfig):
-        """Initialize position manager."""
+    def __init__(
+        self, client: KuCoinFuturesClient, config: RiskConfig, currency: str = "USDT"
+    ):
+        """Initialize position manager.
+
+        Args:
+            client: KuCoin Futures API client.
+            config: Risk configuration settings.
+            currency: Settlement currency for the futures account (USDT or XBT).
+        """
         self.client = client
         self.config = config
+        self.currency = currency
         self._trade_history: list[TradeRecord] = []
         self._daily_pnl = 0.0
         self._daily_trades = 0
@@ -52,7 +61,7 @@ class PositionManager:
     async def get_portfolio_state(self) -> PortfolioState:
         """Get current portfolio state."""
         try:
-            account = await self.client.get_account_overview()
+            account = await self.client.get_account_overview(currency=self.currency)
             data = account.get("data", {})
 
             positions = await self.client.get_positions()
@@ -72,9 +81,7 @@ class PositionManager:
                 total_balance=0, available_balance=0, unrealized_pnl=0
             )
 
-    def calculate_position_size(
-        self, signal: Signal, portfolio: PortfolioState
-    ) -> int:
+    def calculate_position_size(self, signal: Signal, portfolio: PortfolioState) -> int:
         """Calculate optimal position size based on risk parameters."""
         if portfolio.available_balance <= 0:
             return 0
@@ -128,9 +135,7 @@ class PositionManager:
 
         return True, "OK"
 
-    async def open_position(
-        self, signal: Signal, strategy_name: str
-    ) -> str | None:
+    async def open_position(self, signal: Signal, strategy_name: str) -> str | None:
         """Open a new position based on signal."""
         portfolio = await self.get_portfolio_state()
 
@@ -212,9 +217,7 @@ class PositionManager:
                 self._trade_history.append(trade_record)
                 self._daily_pnl += pnl_amount
 
-                logger.info(
-                    f"Closed position for {symbol}: PnL={pnl_amount:.2f}"
-                )
+                logger.info(f"Closed position for {symbol}: PnL={pnl_amount:.2f}")
 
                 return trade_record
 
@@ -224,7 +227,11 @@ class PositionManager:
         return None
 
     def check_stop_loss_take_profit(
-        self, position: Position, current_price: float, stop_loss: float, take_profit: float
+        self,
+        position: Position,
+        current_price: float,
+        stop_loss: float,
+        take_profit: float,
     ) -> str | None:
         """Check if stop loss or take profit is hit for a position.
 

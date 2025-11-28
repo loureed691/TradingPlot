@@ -1,11 +1,31 @@
 """Tests for risk management."""
 
+from unittest.mock import MagicMock
+
 import pytest
 
 from kucoin_bot.config import RiskConfig
-from kucoin_bot.risk_management.position_manager import PortfolioState
+from kucoin_bot.risk_management.position_manager import PortfolioState, PositionManager
 from kucoin_bot.risk_management.risk_controller import RiskController
 from kucoin_bot.strategies.base import Signal, SignalType
+
+
+class TestPositionManagerCurrency:
+    """Tests for PositionManager currency configuration."""
+
+    def test_position_manager_default_currency(self):
+        """Test PositionManager uses default USDT currency."""
+        mock_client = MagicMock()
+        config = RiskConfig()
+        manager = PositionManager(mock_client, config)
+        assert manager.currency == "USDT"
+
+    def test_position_manager_custom_currency(self):
+        """Test PositionManager with custom currency."""
+        mock_client = MagicMock()
+        config = RiskConfig()
+        manager = PositionManager(mock_client, config, currency="XBT")
+        assert manager.currency == "XBT"
 
 
 class TestRiskController:

@@ -32,7 +32,9 @@ class KuCoinFuturesBot:
         self.client = KuCoinFuturesClient(self.config.api)
         self.market_analyzer = MarketAnalyzer(self.client, self.config.trading)
         self.strategy_manager = StrategyManager()
-        self.position_manager = PositionManager(self.client, self.config.risk)
+        self.position_manager = PositionManager(
+            self.client, self.config.risk, self.config.api.default_currency
+        )
         self.risk_controller = RiskController(self.config.risk)
 
         # Trading state
@@ -40,7 +42,9 @@ class KuCoinFuturesBot:
         self._active_pairs: list[PairScore] = []
         self._price_cache: dict[str, list[float]] = {}
         self._volume_cache: dict[str, list[float]] = {}
-        self._pending_signals: dict[str, tuple] = {}  # symbol -> (signal, strategy_name)
+        self._pending_signals: dict[str, tuple] = (
+            {}
+        )  # symbol -> (signal, strategy_name)
 
         # Track last adaptive update time
         self._last_adaptive_update: datetime = datetime.min.replace(tzinfo=timezone.utc)
@@ -98,9 +102,7 @@ class KuCoinFuturesBot:
         )
 
         for pair in self._active_pairs:
-            logger.info(
-                f"Active pair: {pair.symbol} (score: {pair.total_score:.2f})"
-            )
+            logger.info(f"Active pair: {pair.symbol} (score: {pair.total_score:.2f})")
 
     async def _update_market_data(self, symbol: str) -> None:
         """Update market data for a symbol."""
@@ -166,7 +168,9 @@ class KuCoinFuturesBot:
 
         # Average across all pairs
         avg_volatility = sum(volatilities) / len(volatilities) if volatilities else 0.05
-        avg_trend = sum(trend_strengths) / len(trend_strengths) if trend_strengths else 0.0
+        avg_trend = (
+            sum(trend_strengths) / len(trend_strengths) if trend_strengths else 0.0
+        )
         avg_volume_ratio = (
             sum(volume_ratios) / len(volume_ratios) if volume_ratios else 1.0
         )
@@ -202,7 +206,9 @@ class KuCoinFuturesBot:
                 market_conditions = self._calculate_market_conditions()
                 # Use performance from adaptive settings' recorded trade history
                 # for accurate Sharpe ratio calculation from individual trades
-                strategy_performance = self.risk_controller.get_performance_from_history()
+                strategy_performance = (
+                    self.risk_controller.get_performance_from_history()
+                )
                 params = self.risk_controller.update_adaptive_parameters(
                     market_conditions=market_conditions,
                     strategy_performance=strategy_performance,
@@ -316,15 +322,12 @@ class KuCoinFuturesBot:
 
         if trade:
             logger.info(
-                f"Closed position (strategy signal): "
-                f"{symbol} PnL: ${trade.pnl:.2f}"
+                f"Closed position (strategy signal): " f"{symbol} PnL: ${trade.pnl:.2f}"
             )
 
             # Update risk controller and strategy performance
             self.risk_controller.on_trade_result(trade.pnl)
-            self.strategy_manager.update_strategy_performance(
-                strategy_name, trade.pnl
-            )
+            self.strategy_manager.update_strategy_performance(strategy_name, trade.pnl)
 
             del self._pending_signals[symbol]
 

@@ -20,6 +20,9 @@ class APIConfig:
     sandbox: bool = field(
         default_factory=lambda: os.getenv("KUCOIN_SANDBOX", "true").lower() == "true"
     )
+    default_currency: str = field(
+        default_factory=lambda: os.getenv("KUCOIN_DEFAULT_CURRENCY", "USDT")
+    )
 
 
 @dataclass
