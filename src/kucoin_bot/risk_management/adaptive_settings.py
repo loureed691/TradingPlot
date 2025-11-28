@@ -57,6 +57,10 @@ class AdaptiveRiskSettings:
     BASE_STOP_LOSS = 2.0
     BASE_TAKE_PROFIT = 4.0
 
+    # History limits
+    MAX_TRADE_HISTORY = 100
+    MAX_VOLATILITY_HISTORY = 50
+
     def __init__(self) -> None:
         """Initialize adaptive risk settings."""
         self._trade_results: list[float] = []
@@ -295,14 +299,14 @@ class AdaptiveRiskSettings:
         """Record a trade result for performance tracking."""
         self._trade_results.append(pnl)
         # Keep only recent results
-        if len(self._trade_results) > 100:
-            self._trade_results = self._trade_results[-100:]
+        if len(self._trade_results) > self.MAX_TRADE_HISTORY:
+            self._trade_results = self._trade_results[-self.MAX_TRADE_HISTORY:]
 
     def record_volatility(self, volatility: float) -> None:
         """Record current volatility for tracking."""
         self._recent_volatility.append(volatility)
-        if len(self._recent_volatility) > 50:
-            self._recent_volatility = self._recent_volatility[-50:]
+        if len(self._recent_volatility) > self.MAX_VOLATILITY_HISTORY:
+            self._recent_volatility = self._recent_volatility[-self.MAX_VOLATILITY_HISTORY:]
 
     def get_current_parameters(self) -> AdaptiveRiskParameters:
         """Get the current adaptive parameters."""

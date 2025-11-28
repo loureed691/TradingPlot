@@ -178,30 +178,55 @@ class KuCoinFuturesBot:
 
         total_trades = 0
         total_wins = 0
-        total_pnl = 0.0
-        total_losses = 0.0
+        total_winning_pnl = 0.0
+        total_losing_pnl = 0.0
+        all_pnls: list[float] = []
 
         for strategy_stats in stats.values():
             total_trades += strategy_stats["total_trades"]
             total_wins += strategy_stats["winning_trades"]
-            total_pnl += strategy_stats["total_pnl"]
-            if strategy_stats["total_trades"] > strategy_stats["winning_trades"]:
-                losing_trades = (
-                    strategy_stats["total_trades"] - strategy_stats["winning_trades"]
-                )
-                if losing_trades > 0 and strategy_stats["total_pnl"] < 0:
-                    total_losses += abs(strategy_stats["total_pnl"])
+            losing_trades = (
+                strategy_stats["total_trades"] - strategy_stats["winning_trades"]
+            )
+
+            # Estimate winning and losing PnL from available stats
+            total_pnl = strategy_stats["total_pnl"]
+            avg_pnl = strategy_stats["average_pnl"]
+
+            if strategy_stats["winning_trades"] > 0:
+                # Approximate: if total is positive, winning trades had positive returns
+                if total_pnl >= 0:
+                    total_winning_pnl += total_pnl
+                else:
+                    # Some wins, some losses - estimate based on win rate
+                    win_rate = (
+                        strategy_stats["winning_trades"] / strategy_stats["total_trades"]
+                        if strategy_stats["total_trades"] > 0
+                        else 0
+                    )
+                    # Estimate winning portion
+                    total_winning_pnl += max(0, total_pnl * win_rate * 2)
+
+            if losing_trades > 0 and total_pnl < 0:
+                total_losing_pnl += abs(total_pnl)
+
+            # Collect average PnL for Sharpe calculation
+            if strategy_stats["total_trades"] > 0:
+                all_pnls.append(avg_pnl)
 
         win_rate = total_wins / total_trades if total_trades > 0 else 0.5
-        avg_profit = total_pnl / total_wins if total_wins > 0 else 0.0
-        avg_loss = total_losses / (total_trades - total_wins) if total_trades > total_wins else 0.0
+        losing_trades = total_trades - total_wins
+        avg_profit = total_winning_pnl / total_wins if total_wins > 0 else 0.0
+        avg_loss = total_losing_pnl / losing_trades if losing_trades > 0 else 0.0
 
-        # Simple Sharpe-like ratio
-        sharpe = (
-            (total_pnl / total_trades) / (avg_loss + 0.01)
-            if total_trades > 0
-            else 0.0
-        )
+        # Calculate Sharpe ratio: mean return / std dev of returns
+        if len(all_pnls) >= 2:
+            mean_pnl = sum(all_pnls) / len(all_pnls)
+            variance = sum((p - mean_pnl) ** 2 for p in all_pnls) / len(all_pnls)
+            std_dev = variance**0.5
+            sharpe = mean_pnl / std_dev if std_dev > 0 else 0.0
+        else:
+            sharpe = 0.0
 
         return StrategyPerformance(
             win_rate=win_rate,
