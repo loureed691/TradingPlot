@@ -1,0 +1,8 @@
+kucoin-futures-python>=1.0.8
+pandas>=2.0.0
+numpy>=1.24.0
+scikit-learn>=1.3.0
+aiohttp>=3.8.0
+python-dotenv>=1.0.0
+websockets>=11.0
+ta>=0.10.2
