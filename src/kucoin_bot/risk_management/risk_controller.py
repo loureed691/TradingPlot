@@ -38,6 +38,12 @@ class RiskController:
         self._drawdown_threshold = 0.15  # 15% drawdown
         self._peak_balance = 0.0
 
+        # Store original config values to allow restoration
+        self._original_max_leverage = config.max_leverage
+        self._original_max_position_size_percent = config.max_position_size_percent
+        self._original_stop_loss_percent = config.stop_loss_percent
+        self._original_take_profit_percent = config.take_profit_percent
+
         # Initialize adaptive settings if in adaptive mode
         self._adaptive_settings: AdaptiveRiskSettings | None = None
         if config.adaptive_mode:
@@ -76,6 +82,13 @@ class RiskController:
 
         return params
 
+    def restore_original_config(self) -> None:
+        """Restore config to original values from initialization."""
+        self.config.max_leverage = self._original_max_leverage
+        self.config.max_position_size_percent = self._original_max_position_size_percent
+        self.config.stop_loss_percent = self._original_stop_loss_percent
+        self.config.take_profit_percent = self._original_take_profit_percent
+
     def get_adaptive_parameters(self) -> AdaptiveRiskParameters | None:
         """Get current adaptive parameters if in adaptive mode."""
         if self._adaptive_settings:
@@ -85,6 +98,16 @@ class RiskController:
     def is_adaptive_mode(self) -> bool:
         """Check if adaptive mode is enabled."""
         return self._adaptive_settings is not None
+
+    def get_performance_from_history(self) -> StrategyPerformance | None:
+        """Get performance metrics from recorded trade history.
+
+        Returns performance calculated from individual trade results for accurate
+        Sharpe ratio calculation, or None if not in adaptive mode.
+        """
+        if self._adaptive_settings:
+            return self._adaptive_settings.get_performance_from_history()
+        return None
 
     def assess_signal(
         self, signal: Signal, portfolio: PortfolioState

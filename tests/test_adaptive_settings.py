@@ -329,3 +329,128 @@ class TestRiskControllerAdaptiveMode:
         assert controller._peak_balance == 0.0
         # Adaptive settings should be reset too
         assert controller.is_adaptive_mode()
+
+    def test_get_performance_from_history(self, adaptive_config):
+        """Test getting performance from recorded trade history."""
+        controller = RiskController(adaptive_config)
+
+        # Record some trades
+        controller.on_trade_result(100.0)
+        controller.on_trade_result(50.0)
+        controller.on_trade_result(-30.0)
+
+        performance = controller.get_performance_from_history()
+        assert performance is not None
+        assert performance.total_trades == 3
+        assert performance.win_rate == 2 / 3
+
+    def test_get_performance_from_history_non_adaptive(self, non_adaptive_config):
+        """Test that get_performance_from_history returns None in non-adaptive mode."""
+        controller = RiskController(non_adaptive_config)
+        performance = controller.get_performance_from_history()
+        assert performance is None
+
+    def test_restore_original_config(self, adaptive_config, market_conditions):
+        """Test restoring original config values after adaptive updates."""
+        controller = RiskController(adaptive_config)
+
+        # Store original values
+        original_leverage = adaptive_config.max_leverage
+        original_position_size = adaptive_config.max_position_size_percent
+        original_stop_loss = adaptive_config.stop_loss_percent
+        original_take_profit = adaptive_config.take_profit_percent
+
+        # Update with adaptive parameters
+        controller.update_adaptive_parameters(market_conditions=market_conditions)
+
+        # Restore original config
+        controller.restore_original_config()
+
+        # Verify restoration
+        assert adaptive_config.max_leverage == original_leverage
+        assert adaptive_config.max_position_size_percent == original_position_size
+        assert adaptive_config.stop_loss_percent == original_stop_loss
+        assert adaptive_config.take_profit_percent == original_take_profit
+
+
+class TestBotMarketConditions:
+    """Tests for bot market conditions calculation."""
+
+    def test_calculate_market_conditions_empty_cache(self):
+        """Test market conditions with empty price cache."""
+        from kucoin_bot.bot import KuCoinFuturesBot
+        from kucoin_bot.config import BotConfig
+
+        config = BotConfig()
+        config.risk.adaptive_mode = False  # Avoid adaptive settings for this test
+        bot = KuCoinFuturesBot(config)
+
+        conditions = bot._calculate_market_conditions()
+
+        # Should return defaults when no data
+        assert conditions.volatility == 0.05
+        assert conditions.trend_strength == 0.0
+        assert conditions.volume_ratio == 1.0
+
+    def test_calculate_market_conditions_with_data(self):
+        """Test market conditions with price data."""
+        from kucoin_bot.bot import KuCoinFuturesBot
+        from kucoin_bot.config import BotConfig
+
+        config = BotConfig()
+        config.risk.adaptive_mode = False
+        bot = KuCoinFuturesBot(config)
+
+        # Add price data (25 prices with uptrend)
+        prices = [100.0 + i * 0.5 for i in range(25)]
+        volumes = [1000.0] * 25
+
+        bot._price_cache["BTCUSDTM"] = prices
+        bot._volume_cache["BTCUSDTM"] = volumes
+
+        conditions = bot._calculate_market_conditions()
+
+        # Should calculate values from data
+        assert conditions.volatility > 0
+        assert conditions.trend_strength > 0  # Uptrend
+        assert conditions.volume_ratio > 0
+
+    def test_calculate_market_conditions_zero_price_guard(self):
+        """Test market conditions handles zero prices correctly."""
+        from kucoin_bot.bot import KuCoinFuturesBot
+        from kucoin_bot.config import BotConfig
+
+        config = BotConfig()
+        config.risk.adaptive_mode = False
+        bot = KuCoinFuturesBot(config)
+
+        # Add price data with zero price at position -20
+        prices = [100.0] * 25
+        prices[5] = 0.0  # Zero price in the data
+
+        bot._price_cache["BTCUSDTM"] = prices
+        bot._volume_cache["BTCUSDTM"] = [1000.0] * 25
+
+        # Should not raise ZeroDivisionError
+        conditions = bot._calculate_market_conditions()
+        assert conditions is not None
+
+    def test_calculate_market_conditions_insufficient_data(self):
+        """Test market conditions with insufficient data."""
+        from kucoin_bot.bot import KuCoinFuturesBot
+        from kucoin_bot.config import BotConfig
+
+        config = BotConfig()
+        config.risk.adaptive_mode = False
+        bot = KuCoinFuturesBot(config)
+
+        # Add insufficient price data (< 20)
+        bot._price_cache["BTCUSDTM"] = [100.0] * 10
+        bot._volume_cache["BTCUSDTM"] = [1000.0] * 10
+
+        conditions = bot._calculate_market_conditions()
+
+        # Should return defaults when insufficient data
+        assert conditions.volatility == 0.05
+        assert conditions.trend_strength == 0.0
+        assert conditions.volume_ratio == 1.0

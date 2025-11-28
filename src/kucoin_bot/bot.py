@@ -10,7 +10,6 @@ from kucoin_bot.api.client import KuCoinFuturesClient
 from kucoin_bot.config import BotConfig
 from kucoin_bot.risk_management.adaptive_settings import (
     MarketConditions,
-    StrategyPerformance,
 )
 from kucoin_bot.risk_management.position_manager import PositionManager
 from kucoin_bot.risk_management.risk_controller import RiskController
@@ -42,6 +41,9 @@ class KuCoinFuturesBot:
         self._price_cache: dict[str, list[float]] = {}
         self._volume_cache: dict[str, list[float]] = {}
         self._pending_signals: dict[str, tuple] = {}  # symbol -> (signal, strategy_name)
+
+        # Track last adaptive update time
+        self._last_adaptive_update: datetime = datetime.min.replace(tzinfo=timezone.utc)
 
     def _setup_logging(self) -> None:
         """Configure logging."""
@@ -139,16 +141,19 @@ class KuCoinFuturesBot:
                 continue
 
             # Calculate volatility as standard deviation of returns
+            # Guard against division by zero
             returns = [
                 (prices[i] - prices[i - 1]) / prices[i - 1]
                 for i in range(1, len(prices))
+                if prices[i - 1] != 0
             ]
             if returns:
                 volatility = float(np.std(returns))
                 volatilities.append(volatility)
 
             # Calculate trend strength as price change over period
-            if len(prices) >= 20:
+            # Guard against division by zero
+            if len(prices) >= 20 and prices[-20] != 0:
                 trend = (prices[-1] - prices[-20]) / prices[-20]
                 trend_strengths.append(trend)
 
@@ -172,70 +177,6 @@ class KuCoinFuturesBot:
             volume_ratio=avg_volume_ratio,
         )
 
-    def _get_strategy_performance(self) -> StrategyPerformance:
-        """Get strategy performance from strategy manager."""
-        stats = self.strategy_manager.get_strategy_stats()
-
-        total_trades = 0
-        total_wins = 0
-        total_winning_pnl = 0.0
-        total_losing_pnl = 0.0
-        all_pnls: list[float] = []
-
-        for strategy_stats in stats.values():
-            total_trades += strategy_stats["total_trades"]
-            total_wins += strategy_stats["winning_trades"]
-            losing_trades = (
-                strategy_stats["total_trades"] - strategy_stats["winning_trades"]
-            )
-
-            # Estimate winning and losing PnL from available stats
-            total_pnl = strategy_stats["total_pnl"]
-            avg_pnl = strategy_stats["average_pnl"]
-
-            if strategy_stats["winning_trades"] > 0:
-                # Approximate: if total is positive, winning trades had positive returns
-                if total_pnl >= 0:
-                    total_winning_pnl += total_pnl
-                else:
-                    # Some wins, some losses - estimate based on win rate
-                    win_rate = (
-                        strategy_stats["winning_trades"] / strategy_stats["total_trades"]
-                        if strategy_stats["total_trades"] > 0
-                        else 0
-                    )
-                    # Estimate winning portion
-                    total_winning_pnl += max(0, total_pnl * win_rate * 2)
-
-            if losing_trades > 0 and total_pnl < 0:
-                total_losing_pnl += abs(total_pnl)
-
-            # Collect average PnL for Sharpe calculation
-            if strategy_stats["total_trades"] > 0:
-                all_pnls.append(avg_pnl)
-
-        win_rate = total_wins / total_trades if total_trades > 0 else 0.5
-        losing_trades = total_trades - total_wins
-        avg_profit = total_winning_pnl / total_wins if total_wins > 0 else 0.0
-        avg_loss = total_losing_pnl / losing_trades if losing_trades > 0 else 0.0
-
-        # Calculate Sharpe ratio: mean return / std dev of returns
-        if len(all_pnls) >= 2:
-            mean_pnl = sum(all_pnls) / len(all_pnls)
-            variance = sum((p - mean_pnl) ** 2 for p in all_pnls) / len(all_pnls)
-            std_dev = variance**0.5
-            sharpe = mean_pnl / std_dev if std_dev > 0 else 0.0
-        else:
-            sharpe = 0.0
-
-        return StrategyPerformance(
-            win_rate=win_rate,
-            avg_profit=avg_profit,
-            avg_loss=avg_loss,
-            sharpe_ratio=sharpe,
-            total_trades=total_trades,
-        )
-
     async def _trading_cycle(self) -> None:
         """Execute one trading cycle."""
         try:
@@ -252,12 +193,16 @@ class KuCoinFuturesBot:
                 await self._update_trading_pairs()
 
             # Update adaptive risk parameters periodically (every 5 minutes)
+            # Use time-based tracking to avoid multiple updates within the same minute
+            current_time = datetime.now(timezone.utc)
             if (
                 self.risk_controller.is_adaptive_mode()
-                and datetime.now(timezone.utc).minute % 5 == 0
+                and (current_time - self._last_adaptive_update).total_seconds() >= 300
             ):
                 market_conditions = self._calculate_market_conditions()
-                strategy_performance = self._get_strategy_performance()
+                # Use performance from adaptive settings' recorded trade history
+                # for accurate Sharpe ratio calculation from individual trades
+                strategy_performance = self.risk_controller.get_performance_from_history()
                 params = self.risk_controller.update_adaptive_parameters(
                     market_conditions=market_conditions,
                     strategy_performance=strategy_performance,
@@ -268,6 +213,7 @@ class KuCoinFuturesBot:
                         f"position={params.max_position_size_percent}%, "
                         f"SL={params.stop_loss_percent}%, TP={params.take_profit_percent}%"
                     )
+                self._last_adaptive_update = current_time
 
             # Monitor positions and check for exits
             await self._check_positions()
