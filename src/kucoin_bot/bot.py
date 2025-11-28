@@ -102,12 +102,22 @@ class KuCoinFuturesBot:
             if not klines:
                 return
 
-            # Extract prices and volumes
-            prices = [float(k[2]) for k in klines]  # Close prices
-            volumes = [float(k[5]) for k in klines]  # Volumes
+            # Safely extract prices and volumes
+            # Each kline is expected to be [time, open, close, high, low, volume, ...]
+            prices: list[float] = []
+            volumes: list[float] = []
 
-            self._price_cache[symbol] = prices
-            self._volume_cache[symbol] = volumes
+            for k in klines:
+                if isinstance(k, list) and len(k) >= 6:
+                    try:
+                        prices.append(float(k[2]))  # Close price
+                        volumes.append(float(k[5]))  # Volume
+                    except (ValueError, TypeError):
+                        continue
+
+            if prices and volumes:
+                self._price_cache[symbol] = prices
+                self._volume_cache[symbol] = volumes
 
         except Exception as e:
             logger.error(f"Failed to update market data for {symbol}: {e}")
@@ -148,8 +158,11 @@ class KuCoinFuturesBot:
                     symbol, prices, volumes
                 )
 
-                if signal and signal.signal_type in (SignalType.LONG, SignalType.SHORT):
-                    await self._process_signal(signal, portfolio)
+                if signal:
+                    if signal.signal_type in (SignalType.LONG, SignalType.SHORT):
+                        await self._process_signal(signal, portfolio)
+                    elif signal.signal_type == SignalType.CLOSE:
+                        await self._process_close_signal(signal)
 
             # Auto-adjust strategies based on performance
             self.strategy_manager.auto_adjust_strategies()
@@ -169,8 +182,11 @@ class KuCoinFuturesBot:
         for warning in assessment.warnings:
             logger.warning(f"Risk warning: {warning}")
 
-        # Use adjusted signal
+        # Use adjusted signal (guaranteed to be set when approved=True)
         adjusted_signal = assessment.adjusted_signal
+        if adjusted_signal is None:
+            logger.error("Approved assessment has no adjusted signal")
+            return
 
         # Check if we can open position
         can_open, reason = await self.position_manager.can_open_position(
@@ -199,9 +215,45 @@ class KuCoinFuturesBot:
                 strategy_name,
             )
 
+    async def _process_close_signal(self, signal) -> None:
+        """Process a close signal from strategy."""
+        symbol = signal.symbol
+
+        # Check if we have a pending signal (position) for this symbol
+        if symbol not in self._pending_signals:
+            return
+
+        original_signal, strategy_name = self._pending_signals[symbol]
+
+        # Get current price for the position
+        market_data = await self.market_analyzer.get_market_data(symbol)
+        if market_data is None:
+            return
+
+        current_price = market_data.price
+
+        trade = await self.position_manager.close_position(
+            symbol, strategy_name, current_price
+        )
+
+        if trade:
+            logger.info(
+                f"Closed position (strategy signal): "
+                f"{symbol} PnL: ${trade.pnl:.2f}"
+            )
+
+            # Update risk controller and strategy performance
+            self.risk_controller.on_trade_result(trade.pnl)
+            self.strategy_manager.update_strategy_performance(
+                strategy_name, trade.pnl
+            )
+
+            del self._pending_signals[symbol]
+
     async def _check_positions(self) -> None:
         """Check existing positions for exit conditions."""
         portfolio = await self.position_manager.get_portfolio_state()
+        symbols_to_remove: list[str] = []
 
         for position in portfolio.positions:
             symbol = position.symbol
@@ -218,8 +270,8 @@ class KuCoinFuturesBot:
                 signal, strategy_name = self._pending_signals[symbol]
 
                 if signal.stop_loss and signal.take_profit:
-                    exit_reason = await self.position_manager.check_stop_loss_take_profit(
-                        symbol, current_price, signal.stop_loss, signal.take_profit
+                    exit_reason = self.position_manager.check_stop_loss_take_profit(
+                        position, current_price, signal.stop_loss, signal.take_profit
                     )
 
                     if exit_reason:
@@ -239,7 +291,11 @@ class KuCoinFuturesBot:
                                 strategy_name, trade.pnl
                             )
 
-                            del self._pending_signals[symbol]
+                            symbols_to_remove.append(symbol)
+
+        # Remove closed positions from pending signals after iteration
+        for symbol in symbols_to_remove:
+            del self._pending_signals[symbol]
 
     async def get_status(self) -> dict:
         """Get current bot status."""

@@ -48,7 +48,8 @@ class ArbitrageStrategy(BaseStrategy):
         if std == 0:
             return 0.0
 
-        return (values[-1] - mean) / std
+        z_score: float = (values[-1] - mean) / std
+        return z_score
 
     async def analyze(
         self, symbol: str, prices: list[float], volumes: list[float]

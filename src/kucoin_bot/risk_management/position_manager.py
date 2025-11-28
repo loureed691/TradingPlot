@@ -79,6 +79,10 @@ class PositionManager:
         if portfolio.available_balance <= 0:
             return 0
 
+        # Guard against invalid signal price
+        if signal.price <= 0:
+            return 0
+
         # Maximum position value based on portfolio percentage
         max_position_value = (
             portfolio.total_balance * self.config.max_position_size_percent / 100
@@ -182,11 +186,14 @@ class PositionManager:
             success = await self.client.close_position(symbol)
 
             if success:
-                # Calculate PnL
-                if position.side == "long":
-                    pnl = (exit_price - position.entry_price) / position.entry_price
+                # Calculate PnL (guard against zero entry price)
+                if position.entry_price > 0:
+                    if position.side == "long":
+                        pnl = (exit_price - position.entry_price) / position.entry_price
+                    else:
+                        pnl = (position.entry_price - exit_price) / position.entry_price
                 else:
-                    pnl = (position.entry_price - exit_price) / position.entry_price
+                    pnl = 0.0
 
                 pnl_amount = pnl * position.size * position.leverage
 
@@ -216,26 +223,30 @@ class PositionManager:
 
         return None
 
-    async def check_stop_loss_take_profit(
-        self, symbol: str, current_price: float, stop_loss: float, take_profit: float
+    def check_stop_loss_take_profit(
+        self, position: Position, current_price: float, stop_loss: float, take_profit: float
     ) -> str | None:
-        """Check if stop loss or take profit is hit."""
-        portfolio = await self.get_portfolio_state()
+        """Check if stop loss or take profit is hit for a position.
 
-        for pos in portfolio.positions:
-            if pos.symbol != symbol:
-                continue
+        Args:
+            position: The position to check. Must be a valid Position object.
+            current_price: Current market price for the position's symbol.
+            stop_loss: Stop loss price level.
+            take_profit: Take profit price level.
 
-            if pos.side == "long":
-                if current_price <= stop_loss:
-                    return "stop_loss"
-                if current_price >= take_profit:
-                    return "take_profit"
-            else:  # short
-                if current_price >= stop_loss:
-                    return "stop_loss"
-                if current_price <= take_profit:
-                    return "take_profit"
+        Returns:
+            "stop_loss" if stop loss hit, "take_profit" if take profit hit, None otherwise.
+        """
+        if position.side == "long":
+            if current_price <= stop_loss:
+                return "stop_loss"
+            if current_price >= take_profit:
+                return "take_profit"
+        else:  # short
+            if current_price >= stop_loss:
+                return "stop_loss"
+            if current_price <= take_profit:
+                return "take_profit"
 
         return None
 

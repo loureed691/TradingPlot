@@ -120,7 +120,7 @@ class KuCoinFuturesClient:
             async with session.request(
                 method, url, headers=headers, params=params, data=body or None
             ) as response:
-                result = await response.json()
+                result: dict[str, Any] = await response.json()
                 if result.get("code") != "200000":
                     logger.error(f"API error: {result}")
                 return result
@@ -130,50 +130,71 @@ class KuCoinFuturesClient:
 
     async def get_account_overview(self) -> dict[str, Any]:
         """Get account overview including balance."""
-        return await self._request("GET", "/api/v1/account-overview")
+        result = await self._request("GET", "/api/v1/account-overview")
+        return result
 
     async def get_contracts(self) -> list[dict[str, Any]]:
         """Get all available futures contracts."""
         result = await self._request("GET", "/api/v1/contracts/active")
-        return result.get("data", [])
+        contracts: list[dict[str, Any]] = result.get("data", [])
+        return contracts
 
     async def get_ticker(self, symbol: str) -> dict[str, Any]:
         """Get ticker information for a symbol."""
         result = await self._request("GET", f"/api/v1/ticker?symbol={symbol}")
-        return result.get("data", {})
+        data: dict[str, Any] = result.get("data", {})
+        return data
 
     async def get_24h_stats(self, symbol: str) -> dict[str, Any]:
         """Get 24-hour statistics for a symbol."""
         result = await self._request("GET", f"/api/v1/trade-statistics?symbol={symbol}")
-        return result.get("data", {})
+        data: dict[str, Any] = result.get("data", {})
+        return data
 
     async def get_klines(
         self, symbol: str, granularity: int = 60, start: int | None = None
-    ) -> list[list]:
+    ) -> list[list[Any]]:
         """Get kline/candlestick data."""
-        params = {"symbol": symbol, "granularity": granularity}
+        params: dict[str, Any] = {"symbol": symbol, "granularity": granularity}
         if start:
             params["from"] = start
         result = await self._request("GET", "/api/v1/kline/query", params=params)
-        return result.get("data", [])
+        klines: list[list[Any]] = result.get("data", [])
+        return klines
 
     async def get_positions(self) -> list[Position]:
         """Get all open positions."""
         result = await self._request("GET", "/api/v1/positions")
-        positions = []
-        for pos in result.get("data", []):
-            if pos.get("isOpen"):
-                positions.append(
-                    Position(
-                        symbol=pos["symbol"],
-                        side="long" if pos["currentQty"] > 0 else "short",
-                        size=abs(pos["currentQty"]),
-                        entry_price=pos.get("avgEntryPrice", 0),
-                        leverage=pos.get("realLeverage", 1),
-                        unrealized_pnl=pos.get("unrealisedPnl", 0),
-                        margin=pos.get("posMargin", 0),
-                    )
+        positions: list[Position] = []
+        data = result.get("data")
+        if not isinstance(data, list):
+            logger.warning(f"Unexpected positions response format: {type(data)}")
+            return positions
+
+        for pos in data:
+            if not isinstance(pos, dict):
+                continue
+            if not pos.get("isOpen"):
+                continue
+
+            # Safely extract required fields with defaults
+            symbol = pos.get("symbol")
+            current_qty = pos.get("currentQty", 0)
+
+            if not symbol:
+                continue
+
+            positions.append(
+                Position(
+                    symbol=symbol,
+                    side="long" if current_qty > 0 else "short",
+                    size=abs(current_qty),
+                    entry_price=float(pos.get("avgEntryPrice", 0)),
+                    leverage=int(pos.get("realLeverage", 1)),
+                    unrealized_pnl=float(pos.get("unrealisedPnl", 0)),
+                    margin=float(pos.get("posMargin", 0)),
                 )
+            )
         return positions
 
     async def place_order(
