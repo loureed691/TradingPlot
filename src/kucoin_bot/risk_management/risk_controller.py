@@ -4,6 +4,12 @@ import logging
 from dataclasses import dataclass
 
 from kucoin_bot.config import RiskConfig
+from kucoin_bot.risk_management.adaptive_settings import (
+    AdaptiveRiskParameters,
+    AdaptiveRiskSettings,
+    MarketConditions,
+    StrategyPerformance,
+)
 from kucoin_bot.risk_management.position_manager import PortfolioState
 from kucoin_bot.strategies.base import Signal, SignalType
 
@@ -31,6 +37,54 @@ class RiskController:
         self._max_consecutive_losses = 5
         self._drawdown_threshold = 0.15  # 15% drawdown
         self._peak_balance = 0.0
+
+        # Initialize adaptive settings if in adaptive mode
+        self._adaptive_settings: AdaptiveRiskSettings | None = None
+        if config.adaptive_mode:
+            self._adaptive_settings = AdaptiveRiskSettings()
+            logger.info("Adaptive risk management mode enabled")
+
+    def update_adaptive_parameters(
+        self,
+        market_conditions: MarketConditions | None = None,
+        strategy_performance: StrategyPerformance | None = None,
+    ) -> AdaptiveRiskParameters | None:
+        """Update adaptive risk parameters based on current conditions.
+
+        This should be called periodically to recalculate optimal risk parameters.
+
+        Args:
+            market_conditions: Current market conditions (volatility, trend, etc.)
+            strategy_performance: Performance metrics from strategies
+
+        Returns:
+            The newly calculated adaptive parameters, or None if not in adaptive mode.
+        """
+        if not self._adaptive_settings:
+            return None
+
+        params = self._adaptive_settings.calculate_adaptive_parameters(
+            market_conditions=market_conditions,
+            performance=strategy_performance,
+        )
+
+        # Update config with adaptive values
+        self.config.max_leverage = params.max_leverage
+        self.config.max_position_size_percent = params.max_position_size_percent
+        self.config.stop_loss_percent = params.stop_loss_percent
+        self.config.take_profit_percent = params.take_profit_percent
+
+        return params
+
+    def get_adaptive_parameters(self) -> AdaptiveRiskParameters | None:
+        """Get current adaptive parameters if in adaptive mode."""
+        if self._adaptive_settings:
+            return self._adaptive_settings.get_current_parameters()
+        return None
+
+    def is_adaptive_mode(self) -> bool:
+        """Check if adaptive mode is enabled."""
+        return self._adaptive_settings is not None
 
     def assess_signal(
         self, signal: Signal, portfolio: PortfolioState
@@ -147,6 +201,10 @@ class RiskController:
         else:
             self._consecutive_losses = 0
 
+        # Record trade result for adaptive settings
+        if self._adaptive_settings:
+            self._adaptive_settings.record_trade_result(pnl)
+
     def should_pause_trading(self, portfolio: PortfolioState) -> tuple[bool, str]:
         """Determine if trading should be paused."""
         # Check drawdown
@@ -189,3 +247,8 @@ class RiskController:
         """Reset risk controller state."""
         self._consecutive_losses = 0
         self._peak_balance = 0.0
+
+        # Reset adaptive settings if enabled
+        if self._adaptive_settings:
+            self._adaptive_settings = AdaptiveRiskSettings()
+            logger.info("Adaptive risk settings reset")
