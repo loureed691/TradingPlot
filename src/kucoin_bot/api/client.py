@@ -3,8 +3,10 @@
 import base64
 import hashlib
 import hmac
+import json
 import logging
 import time
+import uuid
 from dataclasses import dataclass
 from typing import Any
 
@@ -111,8 +113,6 @@ class KuCoinFuturesClient:
         session = await self._get_session()
         url = f"{self.base_url}{endpoint}"
 
-        import json
-
         body = json.dumps(data) if data else ""
         headers = self._get_headers(method, endpoint, body)
 
@@ -188,8 +188,6 @@ class KuCoinFuturesClient:
         stop_type: str | None = None,  # 'down' or 'up'
     ) -> Order:
         """Place a new order."""
-        import uuid
-
         data = {
             "clientOid": str(uuid.uuid4()),
             "symbol": symbol,

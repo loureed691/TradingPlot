@@ -181,12 +181,8 @@ class KuCoinFuturesBot:
             logger.info(f"Cannot open position: {reason}")
             return
 
-        # Extract strategy name from signal reason
-        strategy_name = "Unknown"
-        for strat in self.strategy_manager.strategies:
-            if strat.name in adjusted_signal.reason:
-                strategy_name = strat.name
-                break
+        # Use strategy name from signal (set by strategy_manager)
+        strategy_name = adjusted_signal.strategy_name or signal.strategy_name
 
         # Open position
         order_id = await self.position_manager.open_position(

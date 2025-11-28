@@ -26,6 +26,7 @@ class Signal:
     take_profit: float | None = None
     leverage: int = 1
     reason: str = ""
+    strategy_name: str = ""
 
 
 class BaseStrategy(ABC):

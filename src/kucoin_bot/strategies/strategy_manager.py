@@ -53,6 +53,8 @@ class StrategyManager:
             try:
                 signal = await strategy.analyze(symbol, prices, volumes)
                 if signal and signal.signal_type != SignalType.HOLD:
+                    # Add strategy name to signal for identification
+                    signal.strategy_name = strategy.name
                     signals.append(signal)
                     self._last_signals[f"{strategy.name}_{symbol}"] = signal
             except Exception as e:
@@ -79,15 +81,12 @@ class StrategyManager:
         scored_signals: list[tuple[float, Signal, str]] = []
 
         for signal in signals:
-            # Find the strategy that generated this signal
-            for strategy in self.strategies:
-                if strategy.name in signal.reason or self._last_signals.get(
-                    f"{strategy.name}_{symbol}"
-                ) == signal:
-                    # Combined score: confidence * performance
-                    combined_score = signal.confidence * strategy.performance_score
-                    scored_signals.append((combined_score, signal, strategy.name))
-                    break
+            # Use the strategy_name attribute directly
+            strategy = self.get_strategy(signal.strategy_name)
+            if strategy:
+                # Combined score: confidence * performance
+                combined_score = signal.confidence * strategy.performance_score
+                scored_signals.append((combined_score, signal, signal.strategy_name))
 
         if not scored_signals:
             return None

@@ -129,6 +129,7 @@ class RiskController:
             take_profit=signal.take_profit,
             leverage=adjusted_leverage,
             reason=signal.reason,
+            strategy_name=signal.strategy_name,
         )
 
         return RiskAssessment(

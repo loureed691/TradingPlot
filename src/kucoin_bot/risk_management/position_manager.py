@@ -1,6 +1,7 @@
 """Position management for trading bot."""
 
 import logging
+import time
 from dataclasses import dataclass, field
 
 from kucoin_bot.api.client import KuCoinFuturesClient, Position
@@ -198,7 +199,7 @@ class PositionManager:
                     leverage=position.leverage,
                     pnl=pnl_amount,
                     strategy_name=strategy_name,
-                    timestamp=0,  # Would use actual timestamp
+                    timestamp=int(time.time()),
                 )
 
                 self._trade_history.append(trade_record)
