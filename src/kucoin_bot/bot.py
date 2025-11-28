@@ -4,8 +4,13 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
+import numpy as np
+
 from kucoin_bot.api.client import KuCoinFuturesClient
 from kucoin_bot.config import BotConfig
+from kucoin_bot.risk_management.adaptive_settings import (
+    MarketConditions,
+)
 from kucoin_bot.risk_management.position_manager import PositionManager
 from kucoin_bot.risk_management.risk_controller import RiskController
 from kucoin_bot.strategies.base import SignalType
@@ -36,6 +41,9 @@ class KuCoinFuturesBot:
         self._price_cache: dict[str, list[float]] = {}
         self._volume_cache: dict[str, list[float]] = {}
         self._pending_signals: dict[str, tuple] = {}  # symbol -> (signal, strategy_name)
+
+        # Track last adaptive update time
+        self._last_adaptive_update: datetime = datetime.min.replace(tzinfo=timezone.utc)
 
     def _setup_logging(self) -> None:
         """Configure logging."""
@@ -122,6 +130,53 @@ class KuCoinFuturesBot:
         except Exception as e:
             logger.error(f"Failed to update market data for {symbol}: {e}")
 
+    def _calculate_market_conditions(self) -> MarketConditions:
+        """Calculate current market conditions from cached data."""
+        volatilities: list[float] = []
+        trend_strengths: list[float] = []
+        volume_ratios: list[float] = []
+
+        for symbol, prices in self._price_cache.items():
+            if len(prices) < 20:
+                continue
+
+            # Calculate volatility as standard deviation of returns
+            # Guard against division by zero
+            returns = [
+                (prices[i] - prices[i - 1]) / prices[i - 1]
+                for i in range(1, len(prices))
+                if prices[i - 1] != 0
+            ]
+            if returns:
+                volatility = float(np.std(returns))
+                volatilities.append(volatility)
+
+            # Calculate trend strength as price change over period
+            # Guard against division by zero
+            if len(prices) >= 20 and prices[-20] != 0:
+                trend = (prices[-1] - prices[-20]) / prices[-20]
+                trend_strengths.append(trend)
+
+            # Calculate volume ratio
+            volumes = self._volume_cache.get(symbol, [])
+            if len(volumes) >= 20:
+                avg_volume = sum(volumes[-20:]) / 20
+                if avg_volume > 0:
+                    volume_ratios.append(volumes[-1] / avg_volume)
+
+        # Average across all pairs
+        avg_volatility = sum(volatilities) / len(volatilities) if volatilities else 0.05
+        avg_trend = sum(trend_strengths) / len(trend_strengths) if trend_strengths else 0.0
+        avg_volume_ratio = (
+            sum(volume_ratios) / len(volume_ratios) if volume_ratios else 1.0
+        )
+
+        return MarketConditions(
+            volatility=avg_volatility,
+            trend_strength=max(-1.0, min(1.0, avg_trend * 10)),  # Normalize to -1 to 1
+            volume_ratio=avg_volume_ratio,
+        )
+
     async def _trading_cycle(self) -> None:
         """Execute one trading cycle."""
         try:
@@ -136,6 +191,29 @@ class KuCoinFuturesBot:
             # Update trading pairs periodically
             if datetime.now(timezone.utc).minute % 15 == 0:
                 await self._update_trading_pairs()
+
+            # Update adaptive risk parameters periodically (every 5 minutes)
+            # Use time-based tracking to avoid multiple updates within the same minute
+            current_time = datetime.now(timezone.utc)
+            if (
+                self.risk_controller.is_adaptive_mode()
+                and (current_time - self._last_adaptive_update).total_seconds() >= 300
+            ):
+                market_conditions = self._calculate_market_conditions()
+                # Use performance from adaptive settings' recorded trade history
+                # for accurate Sharpe ratio calculation from individual trades
+                strategy_performance = self.risk_controller.get_performance_from_history()
+                params = self.risk_controller.update_adaptive_parameters(
+                    market_conditions=market_conditions,
+                    strategy_performance=strategy_performance,
+                )
+                if params:
+                    logger.info(
+                        f"Updated adaptive risk: leverage={params.max_leverage}, "
+                        f"position={params.max_position_size_percent}%, "
+                        f"SL={params.stop_loss_percent}%, TP={params.take_profit_percent}%"
+                    )
+                self._last_adaptive_update = current_time
 
             # Monitor positions and check for exits
             await self._check_positions()
@@ -303,7 +381,7 @@ class KuCoinFuturesBot:
         strategy_stats = self.strategy_manager.get_strategy_stats()
         performance = self.position_manager.get_performance_stats()
 
-        return {
+        status = {
             "running": self._running,
             "portfolio": {
                 "total_balance": portfolio.total_balance,
@@ -315,7 +393,20 @@ class KuCoinFuturesBot:
             "active_pairs": [p.symbol for p in self._active_pairs],
             "strategies": strategy_stats,
             "performance": performance,
+            "adaptive_mode": self.risk_controller.is_adaptive_mode(),
         }
+
+        # Include adaptive parameters if enabled
+        adaptive_params = self.risk_controller.get_adaptive_parameters()
+        if adaptive_params:
+            status["adaptive_risk_parameters"] = {
+                "max_leverage": adaptive_params.max_leverage,
+                "max_position_size_percent": adaptive_params.max_position_size_percent,
+                "stop_loss_percent": adaptive_params.stop_loss_percent,
+                "take_profit_percent": adaptive_params.take_profit_percent,
+            }
+
+        return status
 
 
 async def main():

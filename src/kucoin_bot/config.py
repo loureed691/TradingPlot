@@ -24,7 +24,14 @@ class APIConfig:
 
 @dataclass
 class RiskConfig:
-    """Risk management configuration."""
+    """Risk management configuration.
+
+    When adaptive_mode is True, max_leverage, max_position_size_percent,
+    stop_loss_percent, and take_profit_percent will be dynamically calculated
+    by the AdaptiveRiskSettings based on market conditions and strategy performance.
+    The values provided here serve as initial defaults until adaptive calculations
+    are available.
+    """
 
     max_leverage: int = 10
     max_position_size_percent: float = 5.0  # Max % of portfolio per position
@@ -32,6 +39,7 @@ class RiskConfig:
     take_profit_percent: float = 4.0  # Default take-profit %
     max_open_positions: int = 5
     max_daily_loss_percent: float = 10.0  # Max daily loss before stopping
+    adaptive_mode: bool = True  # When True, risk parameters are auto-calculated
 
 
 @dataclass
@@ -57,6 +65,9 @@ class BotConfig:
     @classmethod
     def from_env(cls) -> "BotConfig":
         """Create configuration from environment variables."""
+        # Check if adaptive mode is enabled (default: True)
+        adaptive_mode = os.getenv("ADAPTIVE_RISK_MODE", "true").lower() == "true"
+
         return cls(
             api=APIConfig(),
             risk=RiskConfig(
@@ -66,6 +77,7 @@ class BotConfig:
                 ),
                 stop_loss_percent=float(os.getenv("STOP_LOSS_PERCENT", "2.0")),
                 take_profit_percent=float(os.getenv("TAKE_PROFIT_PERCENT", "4.0")),
+                adaptive_mode=adaptive_mode,
             ),
             trading=TradingConfig(
                 min_volume_usd=float(os.getenv("MIN_VOLUME_USD", "1000000.0")),

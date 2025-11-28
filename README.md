@@ -69,13 +69,30 @@ cp .env.example .env
 | `KUCOIN_API_SECRET` | Your KuCoin API secret | Required |
 | `KUCOIN_API_PASSPHRASE` | Your KuCoin API passphrase | Required |
 | `KUCOIN_SANDBOX` | Use sandbox/testnet | `true` |
-| `MAX_LEVERAGE` | Maximum leverage allowed | `10` |
-| `MAX_POSITION_SIZE_PERCENT` | Max % of portfolio per position | `5.0` |
-| `STOP_LOSS_PERCENT` | Default stop-loss percentage | `2.0` |
-| `TAKE_PROFIT_PERCENT` | Default take-profit percentage | `4.0` |
+| `ADAPTIVE_RISK_MODE` | Enable automatic risk parameter optimization | `true` |
+| `MAX_LEVERAGE` | Maximum leverage allowed (initial value in adaptive mode) | `10` |
+| `MAX_POSITION_SIZE_PERCENT` | Max % of portfolio per position (initial value in adaptive mode) | `5.0` |
+| `STOP_LOSS_PERCENT` | Default stop-loss percentage (initial value in adaptive mode) | `2.0` |
+| `TAKE_PROFIT_PERCENT` | Default take-profit percentage (initial value in adaptive mode) | `4.0` |
 | `MIN_VOLUME_USD` | Minimum 24h volume for pair selection | `1000000.0` |
 | `UPDATE_INTERVAL` | Market data update interval (seconds) | `60` |
 | `LOG_LEVEL` | Logging level | `INFO` |
+
+### Adaptive Risk Mode
+
+When `ADAPTIVE_RISK_MODE=true` (the default), the bot automatically calculates optimal values for:
+- **MAX_LEVERAGE**: Adjusted based on market volatility and strategy performance
+- **MAX_POSITION_SIZE_PERCENT**: Scaled according to Sharpe ratio and market conditions
+- **STOP_LOSS_PERCENT**: Set wider in high volatility, tighter in low volatility
+- **TAKE_PROFIT_PERCENT**: Maintains minimum 1.5:1 risk/reward ratio, scaled by trend strength
+
+The adaptive system considers:
+- Current market volatility across all active trading pairs
+- Strategy win rate and Sharpe ratio from trade history
+- Trend strength and volume patterns
+- Consecutive losses and drawdown levels
+
+Set `ADAPTIVE_RISK_MODE=false` to use static values from environment variables.
 
 ## Usage
 
