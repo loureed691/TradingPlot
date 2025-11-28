@@ -69,9 +69,17 @@ class TestKuCoinFuturesClient:
         # Verify the passphrase is encrypted, not plain text
         assert headers["KC-API-PASSPHRASE"] != config.api_passphrase
 
-        # Verify it's properly encrypted
-        expected_encrypted = client._encrypt_passphrase()
-        assert headers["KC-API-PASSPHRASE"] == expected_encrypted
+        # Verify it's using the cached encrypted passphrase
+        assert headers["KC-API-PASSPHRASE"] == client._encrypted_passphrase
+
+    def test_encrypted_passphrase_cached_on_init(self, client, config):
+        """Test that encrypted passphrase is cached during initialization."""
+        # Verify the encrypted passphrase is cached
+        assert hasattr(client, "_encrypted_passphrase")
+
+        # Verify the cached value matches the encryption result
+        expected = client._encrypt_passphrase()
+        assert client._encrypted_passphrase == expected
 
     def test_get_headers_includes_api_version_2(self, client):
         """Test that headers include API version 2."""

@@ -67,6 +67,7 @@ class KuCoinFuturesClient:
         self.config = config
         self.base_url = self.SANDBOX_URL if config.sandbox else self.PRODUCTION_URL
         self._session: aiohttp.ClientSession | None = None
+        self._encrypted_passphrase = self._encrypt_passphrase()
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create aiohttp session."""
@@ -92,12 +93,12 @@ class KuCoinFuturesClient:
         For KuCoin API v2, the passphrase must be encrypted using HMAC-SHA256
         with the API secret as the key, then base64 encoded.
         """
-        signature = hmac.new(
+        encrypted_passphrase = hmac.new(
             self.config.api_secret.encode("utf-8"),
             self.config.api_passphrase.encode("utf-8"),
             hashlib.sha256,
         ).digest()
-        return base64.b64encode(signature).decode("utf-8")
+        return base64.b64encode(encrypted_passphrase).decode("utf-8")
 
     def _get_headers(
         self, method: str, endpoint: str, body: str = ""
@@ -110,7 +111,7 @@ class KuCoinFuturesClient:
             "KC-API-KEY": self.config.api_key,
             "KC-API-SIGN": signature,
             "KC-API-TIMESTAMP": timestamp,
-            "KC-API-PASSPHRASE": self._encrypt_passphrase(),
+            "KC-API-PASSPHRASE": self._encrypted_passphrase,
             "KC-API-KEY-VERSION": "2",
             "Content-Type": "application/json",
         }
