@@ -86,6 +86,19 @@ class KuCoinFuturesClient:
         ).digest()
         return base64.b64encode(signature).decode("utf-8")
 
+    def _encrypt_passphrase(self) -> str:
+        """Encrypt passphrase for API v2 authentication.
+
+        For KuCoin API v2, the passphrase must be encrypted using HMAC-SHA256
+        with the API secret as the key, then base64 encoded.
+        """
+        signature = hmac.new(
+            self.config.api_secret.encode("utf-8"),
+            self.config.api_passphrase.encode("utf-8"),
+            hashlib.sha256,
+        ).digest()
+        return base64.b64encode(signature).decode("utf-8")
+
     def _get_headers(
         self, method: str, endpoint: str, body: str = ""
     ) -> dict[str, str]:
@@ -97,7 +110,7 @@ class KuCoinFuturesClient:
             "KC-API-KEY": self.config.api_key,
             "KC-API-SIGN": signature,
             "KC-API-TIMESTAMP": timestamp,
-            "KC-API-PASSPHRASE": self.config.api_passphrase,
+            "KC-API-PASSPHRASE": self._encrypt_passphrase(),
             "KC-API-KEY-VERSION": "2",
             "Content-Type": "application/json",
         }
