@@ -226,7 +226,17 @@ class PositionManager:
     def check_stop_loss_take_profit(
         self, position: Position, current_price: float, stop_loss: float, take_profit: float
     ) -> str | None:
-        """Check if stop loss or take profit is hit for a position."""
+        """Check if stop loss or take profit is hit for a position.
+
+        Args:
+            position: The position to check. Must be a valid Position object.
+            current_price: Current market price for the position's symbol.
+            stop_loss: Stop loss price level.
+            take_profit: Take profit price level.
+
+        Returns:
+            "stop_loss" if stop loss hit, "take_profit" if take profit hit, None otherwise.
+        """
         if position.side == "long":
             if current_price <= stop_loss:
                 return "stop_loss"

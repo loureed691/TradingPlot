@@ -168,6 +168,7 @@ class KuCoinFuturesClient:
         positions: list[Position] = []
         data = result.get("data")
         if not isinstance(data, list):
+            logger.warning(f"Unexpected positions response format: {type(data)}")
             return positions
 
         for pos in data:
