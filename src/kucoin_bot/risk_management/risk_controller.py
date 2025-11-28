@@ -104,6 +104,7 @@ class RiskController:
         adjusted_leverage = min(adjusted_leverage, self.config.max_leverage)
 
         # Adjust stop loss if too tight
+        adjusted_stop_loss: float | None = signal.stop_loss
         if signal.stop_loss and signal.price:
             stop_distance = abs(signal.price - signal.stop_loss) / signal.price
             min_stop_distance = self.config.stop_loss_percent / 100
@@ -114,10 +115,6 @@ class RiskController:
                 else:
                     adjusted_stop_loss = signal.price * (1 + min_stop_distance)
                 warnings.append("Stop loss adjusted to minimum distance")
-            else:
-                adjusted_stop_loss = signal.stop_loss
-        else:
-            adjusted_stop_loss = signal.stop_loss
 
         # Create adjusted signal
         adjusted_signal = Signal(

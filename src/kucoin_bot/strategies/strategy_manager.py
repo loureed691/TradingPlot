@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class StrategyManager:
     """Manages multiple strategies and selects the best one dynamically."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize strategy manager with all available strategies."""
         self.strategies: list[BaseStrategy] = [
             TrendFollowingStrategy(),
