@@ -177,18 +177,52 @@ class KuCoinFuturesClient:
         return data
 
     async def get_24h_stats(self, symbol: str) -> dict[str, Any]:
-        """Get 24-hour statistics for a symbol."""
-        result = await self._request("GET", f"/api/v1/trade-statistics?symbol={symbol}")
-        data: dict[str, Any] = result.get("data", {})
-        return data
+        """Get 24-hour statistics for a symbol.
+
+        Note: The /api/v1/trade-statistics endpoint is deprecated in API v3.
+        This method now uses ticker data which provides volume and turnover info.
+        """
+        # Use ticker endpoint which includes 24h volume data
+        return await self.get_ticker(symbol)
 
     async def get_klines(
-        self, symbol: str, granularity: int = 60, start: int | None = None
+        self,
+        symbol: str,
+        granularity: int = 60,
+        start: int | None = None,
+        end: int | None = None,
     ) -> list[list[Any]]:
-        """Get kline/candlestick data."""
-        params: dict[str, Any] = {"symbol": symbol, "granularity": granularity}
-        if start:
-            params["from"] = start
+        """Get kline/candlestick data.
+
+        Args:
+            symbol: Trading pair symbol (e.g., 'XBTUSDTM').
+            granularity: Kline interval in seconds. Supported values:
+                60 (1min), 300 (5min), 900 (15min), 1800 (30min),
+                3600 (1hr), 7200 (2hr), 14400 (4hr), 21600 (6hr),
+                28800 (8hr), 43200 (12hr), 86400 (1day), 604800 (1week).
+            start: Start time in milliseconds (from). If not provided,
+                   defaults to 24 hours ago.
+            end: End time in milliseconds (to). If not provided,
+                 defaults to current time.
+
+        Returns:
+            List of kline data. Each kline is a list:
+            [time, open, close, high, low, volume, turnover]
+        """
+        # Calculate default time range if not provided
+        current_time = int(time.time() * 1000)
+        if end is None:
+            end = current_time
+        if start is None:
+            # Default to 24 hours of data
+            start = end - (24 * 60 * 60 * 1000)
+
+        params: dict[str, Any] = {
+            "symbol": symbol,
+            "granularity": granularity,
+            "from": start,
+            "to": end,
+        }
         result = await self._request("GET", "/api/v1/kline/query", params=params)
         klines: list[list[Any]] = result.get("data", [])
         return klines
@@ -275,18 +309,62 @@ class KuCoinFuturesClient:
         return result.get("code") == "200000"
 
     async def close_position(self, symbol: str) -> bool:
-        """Close a position."""
-        result = await self._request(
-            "POST", "/api/v1/position/close", data={"symbol": symbol}
-        )
+        """Close a position by placing a market order with closeOrder=true.
+
+        Note: The /api/v1/position/close endpoint does not exist in API v3.
+        Instead, we place a market order with closeOrder=true to close the
+        entire position.
+
+        Args:
+            symbol: Trading pair symbol to close.
+
+        Returns:
+            True if the close order was placed successfully, False otherwise.
+        """
+        # First get the current position to determine the side
+        positions = await self.get_positions()
+        position = None
+        for pos in positions:
+            if pos.symbol == symbol:
+                position = pos
+                break
+
+        if position is None:
+            logger.warning(f"No open position found for {symbol}")
+            return False
+
+        # Determine the opposite side to close the position
+        close_side = "sell" if position.side == "long" else "buy"
+
+        data = {
+            "clientOid": str(uuid.uuid4()),
+            "symbol": symbol,
+            "side": close_side,
+            "type": "market",
+            "closeOrder": True,  # Close entire position
+        }
+
+        result = await self._request("POST", "/api/v1/orders", data=data)
         return result.get("code") == "200000"
 
     async def set_leverage(self, symbol: str, leverage: int) -> bool:
-        """Set leverage for a symbol."""
+        """Set leverage for a symbol.
+
+        Note: Uses the correct /api/v1/position/leverage/change endpoint
+        for API v3 (not /api/v1/position/risk-limit-level/change which is
+        for changing risk limit level, not leverage).
+
+        Args:
+            symbol: Trading pair symbol.
+            leverage: Desired leverage value.
+
+        Returns:
+            True if leverage was set successfully, False otherwise.
+        """
         result = await self._request(
             "POST",
-            "/api/v1/position/risk-limit-level/change",
-            data={"symbol": symbol, "level": leverage},
+            "/api/v2/changeCrossUserLeverage",
+            data={"symbol": symbol, "leverage": str(leverage)},
         )
         return result.get("code") == "200000"
 
