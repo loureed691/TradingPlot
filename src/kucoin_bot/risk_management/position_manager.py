@@ -95,8 +95,8 @@ class PositionManager:
             portfolio.total_balance * self.config.max_position_size_percent / 100
         )
 
-        # Adjust for leverage
-        effective_leverage = min(signal.leverage, self.config.max_leverage)
+        # Adjust for leverage (ensure at least 1 to avoid division by zero)
+        effective_leverage = max(1, min(signal.leverage, self.config.max_leverage))
         margin_required = max_position_value / effective_leverage
 
         # Ensure we don't exceed available balance

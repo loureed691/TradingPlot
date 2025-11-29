@@ -41,10 +41,22 @@ class AIPredictor(BaseStrategy):
         """Extract features from price and volume data."""
         features = []
 
-        # Price returns at different timeframes
-        returns_5 = (prices[-1] - prices[-6]) / prices[-6] if len(prices) > 5 else 0
-        returns_10 = (prices[-1] - prices[-11]) / prices[-11] if len(prices) > 10 else 0
-        returns_20 = (prices[-1] - prices[-21]) / prices[-21] if len(prices) > 20 else 0
+        # Price returns at different timeframes (guard against division by zero)
+        returns_5 = (
+            (prices[-1] - prices[-6]) / prices[-6]
+            if len(prices) > 5 and prices[-6] != 0
+            else 0
+        )
+        returns_10 = (
+            (prices[-1] - prices[-11]) / prices[-11]
+            if len(prices) > 10 and prices[-11] != 0
+            else 0
+        )
+        returns_20 = (
+            (prices[-1] - prices[-21]) / prices[-21]
+            if len(prices) > 20 and prices[-21] != 0
+            else 0
+        )
 
         features.extend([returns_5, returns_10, returns_20])
 
@@ -95,7 +107,7 @@ class AIPredictor(BaseStrategy):
             features.append(0)
 
         # Price momentum (rate of change)
-        if len(prices) >= 10:
+        if len(prices) >= 10 and prices[-10] != 0:
             momentum = (prices[-1] - prices[-10]) / prices[-10]
             features.append(momentum)
         else:
@@ -106,6 +118,10 @@ class AIPredictor(BaseStrategy):
     def _generate_label(self, prices: list[float], horizon: int = 5) -> int:
         """Generate label for training (1: up, -1: down, 0: neutral)."""
         if len(prices) < horizon + 1:
+            return 0
+
+        # Guard against division by zero
+        if prices[-horizon - 1] == 0:
             return 0
 
         future_return = (prices[-1] - prices[-horizon - 1]) / prices[-horizon - 1]

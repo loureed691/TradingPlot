@@ -2,6 +2,7 @@
 
 import pytest
 
+from kucoin_bot.strategies.ai_predictor import AIPredictor
 from kucoin_bot.strategies.arbitrage import ArbitrageStrategy
 from kucoin_bot.strategies.base import Signal, SignalType
 from kucoin_bot.strategies.scalping import ScalpingStrategy
@@ -160,3 +161,59 @@ class TestStrategyManager:
 
         assert "TrendFollowing" in stats
         assert stats["TrendFollowing"]["total_trades"] == 2
+
+
+class TestAIPredictor:
+    """Tests for AIPredictor strategy."""
+
+    @pytest.fixture
+    def strategy(self):
+        """Create strategy instance."""
+        return AIPredictor()
+
+    def test_required_history_length(self, strategy):
+        """Test required history length."""
+        assert strategy.get_required_history_length() == 100
+
+    def test_extract_features_handles_zero_prices(self, strategy):
+        """Test that feature extraction handles zero prices without division error."""
+        # Create prices with zeros at key positions
+        prices = [100.0] * 25
+        prices[-6] = 0.0  # Position for 5-period return
+        volumes = [1000.0] * 25
+
+        # Should not raise ZeroDivisionError
+        features = strategy._extract_features(prices, volumes)
+        assert len(features) > 0
+        # First feature (returns_5) should be 0 due to zero guard
+        assert features[0] == 0
+
+    def test_extract_features_handles_zero_at_momentum_position(self, strategy):
+        """Test that momentum calculation handles zero price."""
+        prices = [100.0] * 25
+        prices[-10] = 0.0  # Position for momentum calculation
+        volumes = [1000.0] * 25
+
+        # Should not raise ZeroDivisionError
+        features = strategy._extract_features(prices, volumes)
+        assert len(features) > 0
+        # Last feature (momentum) should be 0 due to zero guard
+        assert features[-1] == 0
+
+    def test_generate_label_handles_zero_price(self, strategy):
+        """Test that label generation handles zero price."""
+        prices = [100.0] * 10
+        prices[4] = 0.0  # Position for horizon=5 calculation
+
+        # Should not raise ZeroDivisionError
+        label = strategy._generate_label(prices, horizon=5)
+        assert label == 0  # Returns 0 when division would fail
+
+    @pytest.mark.asyncio
+    async def test_analyze_with_insufficient_data(self, strategy):
+        """Test analysis with insufficient data."""
+        prices = [50000.0] * 10
+        volumes = [1000.0] * 10
+
+        signal = await strategy.analyze("BTCUSDTM", prices, volumes)
+        assert signal is None
