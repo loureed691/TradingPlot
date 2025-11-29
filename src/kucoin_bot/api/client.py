@@ -142,9 +142,26 @@ class KuCoinFuturesClient:
             logger.error(f"Request failed: {e}")
             raise
 
-    async def get_account_overview(self) -> dict[str, Any]:
-        """Get account overview including balance."""
-        result = await self._request("GET", "/api/v1/account-overview")
+    async def get_account_overview(self, currency: str = "USDT") -> dict[str, Any]:
+        """Get account overview including balance.
+
+        Args:
+            currency: The settlement currency for the futures account.
+                      Use 'USDT' for USDT-margined futures or 'XBT' for BTC-margined futures.
+                      Defaults to 'USDT'.
+
+        Returns:
+            Account overview data including accountEquity and availableBalance.
+
+        Raises:
+            ValueError: If currency is not 'USDT' or 'XBT'.
+        """
+        if currency not in ("USDT", "XBT"):
+            raise ValueError(f"Invalid currency '{currency}'. Must be 'USDT' or 'XBT'.")
+
+        result = await self._request(
+            "GET", f"/api/v1/account-overview?currency={currency}"
+        )
         return result
 
     async def get_contracts(self) -> list[dict[str, Any]]:

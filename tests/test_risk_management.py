@@ -1,11 +1,49 @@
 """Tests for risk management."""
 
+from unittest.mock import MagicMock
+
 import pytest
 
 from kucoin_bot.config import RiskConfig
-from kucoin_bot.risk_management.position_manager import PortfolioState
+from kucoin_bot.risk_management.position_manager import PortfolioState, PositionManager
 from kucoin_bot.risk_management.risk_controller import RiskController
 from kucoin_bot.strategies.base import Signal, SignalType
+
+
+class TestPositionManagerCurrency:
+    """Tests for PositionManager currency configuration."""
+
+    def test_position_manager_default_currency(self):
+        """Test PositionManager uses default USDT currency."""
+        mock_client = MagicMock()
+        config = RiskConfig()
+        manager = PositionManager(mock_client, config)
+        assert manager.currency == "USDT"
+
+    def test_position_manager_custom_currency(self):
+        """Test PositionManager with custom currency."""
+        mock_client = MagicMock()
+        config = RiskConfig()
+        manager = PositionManager(mock_client, config, currency="XBT")
+        assert manager.currency == "XBT"
+
+    @pytest.mark.asyncio
+    async def test_position_manager_passes_currency_to_api(self):
+        """Test PositionManager passes currency to get_account_overview."""
+        from unittest.mock import AsyncMock
+
+        mock_client = MagicMock()
+        mock_client.get_account_overview = AsyncMock(
+            return_value={"data": {"accountEquity": 1000, "availableBalance": 800}}
+        )
+        mock_client.get_positions = AsyncMock(return_value=[])
+
+        config = RiskConfig()
+        manager = PositionManager(mock_client, config, currency="XBT")
+
+        await manager.get_portfolio_state()
+
+        mock_client.get_account_overview.assert_called_once_with(currency="XBT")
 
 
 class TestRiskController:

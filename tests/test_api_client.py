@@ -122,3 +122,73 @@ class TestKuCoinFuturesClient:
         )
         client = KuCoinFuturesClient(config)
         assert client.base_url == KuCoinFuturesClient.PRODUCTION_URL
+
+    def test_default_currency_configuration(self):
+        """Test default currency is set in APIConfig."""
+        config = APIConfig(
+            api_key="test",
+            api_secret="test",
+            api_passphrase="test",
+            sandbox=True,
+        )
+        # Default should be USDT
+        assert config.default_currency == "USDT"
+
+    def test_custom_currency_configuration(self):
+        """Test custom currency can be set in APIConfig."""
+        config = APIConfig(
+            api_key="test",
+            api_secret="test",
+            api_passphrase="test",
+            sandbox=True,
+            default_currency="XBT",
+        )
+        assert config.default_currency == "XBT"
+
+    def test_invalid_currency_configuration_raises_error(self):
+        """Test that invalid currency in APIConfig raises ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            APIConfig(
+                api_key="test",
+                api_secret="test",
+                api_passphrase="test",
+                sandbox=True,
+                default_currency="INVALID",
+            )
+        assert "Invalid default_currency" in str(exc_info.value)
+        assert "Must be 'USDT' or 'XBT'" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_get_account_overview_with_default_currency(self, client, mocker):
+        """Test get_account_overview uses default USDT currency."""
+        mock_request = mocker.patch.object(
+            client, "_request", return_value={"code": "200000", "data": {}}
+        )
+
+        await client.get_account_overview()
+
+        mock_request.assert_called_once_with(
+            "GET", "/api/v1/account-overview?currency=USDT"
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_account_overview_with_xbt_currency(self, client, mocker):
+        """Test get_account_overview passes XBT currency parameter."""
+        mock_request = mocker.patch.object(
+            client, "_request", return_value={"code": "200000", "data": {}}
+        )
+
+        await client.get_account_overview(currency="XBT")
+
+        mock_request.assert_called_once_with(
+            "GET", "/api/v1/account-overview?currency=XBT"
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_account_overview_invalid_currency_raises_error(self, client):
+        """Test get_account_overview raises ValueError for invalid currency."""
+        with pytest.raises(ValueError) as exc_info:
+            await client.get_account_overview(currency="INVALID")
+
+        assert "Invalid currency" in str(exc_info.value)
+        assert "Must be 'USDT' or 'XBT'" in str(exc_info.value)

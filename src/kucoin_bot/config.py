@@ -20,6 +20,17 @@ class APIConfig:
     sandbox: bool = field(
         default_factory=lambda: os.getenv("KUCOIN_SANDBOX", "true").lower() == "true"
     )
+    default_currency: str = field(
+        default_factory=lambda: os.getenv("KUCOIN_DEFAULT_CURRENCY", "USDT")
+    )
+
+    def __post_init__(self):
+        """Validate configuration after initialization."""
+        if self.default_currency not in ("USDT", "XBT"):
+            raise ValueError(
+                f"Invalid default_currency '{self.default_currency}'. "
+                "Must be 'USDT' or 'XBT'."
+            )
 
 
 @dataclass
