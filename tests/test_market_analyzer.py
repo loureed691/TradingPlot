@@ -135,18 +135,26 @@ class TestMarketAnalyzer:
                     "ts": 1234567890000,
                 }
 
-        # Format: [time, open, close, high, low, volume]
-        mock_klines = [
-            [1234567890000, 49500, 50500, 51000, 49000, 1000]
-            for _ in range(30)
-        ]
+        def mock_get_klines(symbol, granularity):
+            if symbol == "BTCUSDTM":
+                # BTCUSDTM: realistic high volatility, high price
+                return [
+                    [1234567890000, 49500, 50500, 51000, 49000, 1000]
+                    for _ in range(30)
+                ]
+            else:  # LOWVOLUSDTM
+                # LOWVOLUSDTM: low volatility, low price
+                return [
+                    [1234567890000, 0.95, 1.05, 1.05, 0.95, 1000]
+                    for _ in range(30)
+                ]
 
         mocker.patch.object(
             analyzer.client, "get_contracts", return_value=mock_contracts
         )
         mocker.patch.object(analyzer.client, "get_ticker", side_effect=mock_get_ticker)
         mocker.patch.object(
-            analyzer.client, "get_klines", return_value=mock_klines
+            analyzer.client, "get_klines", side_effect=mock_get_klines
         )
 
         pairs = await analyzer.select_best_pairs(max_pairs=5)
