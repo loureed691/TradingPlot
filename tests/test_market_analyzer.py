@@ -59,8 +59,10 @@ class TestMarketAnalyzer:
         }
 
         # Mock klines for volatility calculation
+        # Format: [time, open, close, high, low, volume]
+        # high >= max(open, close) and low <= min(open, close)
         mock_klines = [
-            [1234567890000, 49000, 50000, 51000, 48000, 1000]
+            [1234567890000, 49500, 50500, 51000, 49000, 1000]
             for _ in range(30)
         ]
 
@@ -88,8 +90,9 @@ class TestMarketAnalyzer:
             "ts": 1234567890000,
         }
 
+        # Format: [time, open, close, high, low, volume]
         mock_klines = [
-            [1234567890000, 49000, 50000, 51000, 48000, 1000]
+            [1234567890000, 49500, 50500, 51000, 49000, 1000]
             for _ in range(30)
         ]
 
@@ -132,8 +135,9 @@ class TestMarketAnalyzer:
                     "ts": 1234567890000,
                 }
 
+        # Format: [time, open, close, high, low, volume]
         mock_klines = [
-            [1234567890000, 49000, 50000, 52000, 48000, 1000]
+            [1234567890000, 49500, 50500, 51000, 49000, 1000]
             for _ in range(30)
         ]
 
