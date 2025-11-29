@@ -350,9 +350,9 @@ class KuCoinFuturesClient:
     async def set_leverage(self, symbol: str, leverage: int) -> bool:
         """Set leverage for a symbol.
 
-        Note: Uses the correct /api/v1/position/leverage/change endpoint
-        for API v3 (not /api/v1/position/risk-limit-level/change which is
-        for changing risk limit level, not leverage).
+        Note: Uses the /api/v2/changeCrossUserLeverage endpoint for API v3
+        (not /api/v1/position/risk-limit-level/change which is for changing
+        risk limit level, not leverage).
 
         Args:
             symbol: Trading pair symbol.

@@ -6,7 +6,7 @@ import hmac
 
 import pytest
 
-from kucoin_bot.api.client import KuCoinFuturesClient
+from kucoin_bot.api.client import KuCoinFuturesClient, Position
 from kucoin_bot.config import APIConfig
 
 
@@ -249,8 +249,6 @@ class TestKuCoinFuturesClient:
     @pytest.mark.asyncio
     async def test_close_position_uses_close_order_param(self, client, mocker):
         """Test close_position uses closeOrder=true via orders endpoint."""
-        from kucoin_bot.api.client import Position
-
         # Mock get_positions to return a position
         mock_positions = [
             Position(
@@ -284,8 +282,6 @@ class TestKuCoinFuturesClient:
     @pytest.mark.asyncio
     async def test_close_position_short_uses_buy_side(self, client, mocker):
         """Test close_position for short position uses buy side."""
-        from kucoin_bot.api.client import Position
-
         mock_positions = [
             Position(
                 symbol="ETHUSDTM",
