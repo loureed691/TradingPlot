@@ -46,6 +46,73 @@ class TestPositionManagerCurrency:
         mock_client.get_account_overview.assert_called_once_with(currency="XBT")
 
 
+class TestPositionManagerPositionSize:
+    """Tests for PositionManager position size calculation."""
+
+    @pytest.fixture
+    def manager(self):
+        """Create position manager with mocked client."""
+        mock_client = MagicMock()
+        config = RiskConfig(max_leverage=10, max_position_size_percent=5.0)
+        return PositionManager(mock_client, config)
+
+    @pytest.fixture
+    def portfolio(self):
+        """Create test portfolio."""
+        return PortfolioState(
+            total_balance=10000.0,
+            available_balance=8000.0,
+            unrealized_pnl=0.0,
+            positions=[],
+        )
+
+    def test_calculate_position_size_with_zero_leverage_signal(self, manager, portfolio):
+        """Test position size calculation handles zero leverage in signal."""
+        signal = Signal(
+            signal_type=SignalType.LONG,
+            symbol="BTCUSDTM",
+            confidence=0.8,
+            price=50000.0,
+            leverage=0,  # Zero leverage
+        )
+
+        # Should not raise ZeroDivisionError, should use minimum leverage of 1
+        size = manager.calculate_position_size(signal, portfolio)
+        assert size >= 1
+
+    def test_calculate_position_size_with_zero_config_leverage(self, portfolio):
+        """Test position size calculation handles zero max_leverage in config."""
+        mock_client = MagicMock()
+        config = RiskConfig(max_leverage=0, max_position_size_percent=5.0)
+        manager = PositionManager(mock_client, config)
+
+        signal = Signal(
+            signal_type=SignalType.LONG,
+            symbol="BTCUSDTM",
+            confidence=0.8,
+            price=50000.0,
+            leverage=5,
+        )
+
+        # Should not raise ZeroDivisionError, should use minimum leverage of 1
+        size = manager.calculate_position_size(signal, portfolio)
+        assert size >= 1
+
+    def test_calculate_position_size_with_zero_price(self, manager, portfolio):
+        """Test position size calculation handles zero price."""
+        signal = Signal(
+            signal_type=SignalType.LONG,
+            symbol="BTCUSDTM",
+            confidence=0.8,
+            price=0.0,  # Zero price
+            leverage=5,
+        )
+
+        # Should return 0 for invalid price
+        size = manager.calculate_position_size(signal, portfolio)
+        assert size == 0
+
+
 class TestRiskController:
     """Tests for RiskController."""
 
