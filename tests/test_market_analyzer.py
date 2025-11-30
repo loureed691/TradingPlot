@@ -62,17 +62,12 @@ class TestMarketAnalyzer:
         # Format: [time, open, close, high, low, volume]
         # high >= max(open, close) and low <= min(open, close)
         mock_klines = [
-            [1234567890000, 49500, 50500, 51000, 49000, 1000]
-            for _ in range(30)
+            [1234567890000, 49500, 50500, 51000, 49000, 1000] for _ in range(30)
         ]
 
         # Patch the client methods
-        mocker.patch.object(
-            analyzer.client, "get_ticker", return_value=mock_ticker
-        )
-        mocker.patch.object(
-            analyzer.client, "get_klines", return_value=mock_klines
-        )
+        mocker.patch.object(analyzer.client, "get_ticker", return_value=mock_ticker)
+        mocker.patch.object(analyzer.client, "get_klines", return_value=mock_klines)
 
         market_data = await analyzer.get_market_data("BTCUSDTM")
 
@@ -92,16 +87,11 @@ class TestMarketAnalyzer:
 
         # Format: [time, open, close, high, low, volume]
         mock_klines = [
-            [1234567890000, 49500, 50500, 51000, 49000, 1000]
-            for _ in range(30)
+            [1234567890000, 49500, 50500, 51000, 49000, 1000] for _ in range(30)
         ]
 
-        mocker.patch.object(
-            analyzer.client, "get_ticker", return_value=mock_ticker
-        )
-        mocker.patch.object(
-            analyzer.client, "get_klines", return_value=mock_klines
-        )
+        mocker.patch.object(analyzer.client, "get_ticker", return_value=mock_ticker)
+        mocker.patch.object(analyzer.client, "get_klines", return_value=mock_klines)
 
         market_data = await analyzer.get_market_data("BTCUSDTM")
 
@@ -110,9 +100,7 @@ class TestMarketAnalyzer:
         assert market_data.volume_24h == 0.0
 
     @pytest.mark.asyncio
-    async def test_select_best_pairs_filters_by_volume_in_usd(
-        self, analyzer, mocker
-    ):
+    async def test_select_best_pairs_filters_by_volume_in_usd(self, analyzer, mocker):
         """Test that pair selection properly filters by volume in USD."""
         # Mock contracts
         mock_contracts = [
@@ -139,23 +127,19 @@ class TestMarketAnalyzer:
             if symbol == "BTCUSDTM":
                 # BTCUSDTM: realistic high volatility, high price
                 return [
-                    [1234567890000, 49500, 50500, 51000, 49000, 1000]
-                    for _ in range(30)
+                    [1234567890000, 49500, 50500, 51000, 49000, 1000] for _ in range(30)
                 ]
             else:  # LOWVOLUSDTM
                 # LOWVOLUSDTM: low volatility, low price
                 return [
-                    [1234567890000, 0.95, 1.05, 1.05, 0.95, 1000]
-                    for _ in range(30)
+                    [1234567890000, 0.95, 1.05, 1.05, 0.95, 1000] for _ in range(30)
                 ]
 
         mocker.patch.object(
             analyzer.client, "get_contracts", return_value=mock_contracts
         )
         mocker.patch.object(analyzer.client, "get_ticker", side_effect=mock_get_ticker)
-        mocker.patch.object(
-            analyzer.client, "get_klines", side_effect=mock_get_klines
-        )
+        mocker.patch.object(analyzer.client, "get_klines", side_effect=mock_get_klines)
 
         pairs = await analyzer.select_best_pairs(max_pairs=5)
 
@@ -201,3 +185,94 @@ class TestMarketAnalyzer:
         assert "BTCUSDTM" in pairs
         assert "ETHUSDTM" in pairs
         assert "OLDUSDTM" not in pairs
+
+    @pytest.mark.asyncio
+    async def test_select_best_pairs_fallback_when_no_pairs_pass_filters(
+        self, analyzer, mocker
+    ):
+        """Test that fallback returns pairs by volume when none meet strict criteria.
+
+        When all pairs fail volume or volatility filters, the method should
+        fall back to returning the highest volume pairs to ensure trading can proceed.
+        """
+        # Mock contracts
+        mock_contracts = [
+            {"symbol": "BTCUSDTM", "status": "Open"},
+            {"symbol": "ETHUSDTM", "status": "Open"},
+        ]
+
+        # Both pairs have low volume (below threshold) but valid volatility
+        async def mock_get_ticker(symbol):
+            if symbol == "BTCUSDTM":
+                return {
+                    "price": "50000.0",
+                    "turnoverOf24h": "500000.0",  # 500K USD - below 1M threshold
+                    "ts": 1234567890000,
+                }
+            else:
+                return {
+                    "price": "3000.0",
+                    "turnoverOf24h": "200000.0",  # 200K USD - below 1M threshold
+                    "ts": 1234567890000,
+                }
+
+        def mock_get_klines(symbol, granularity):
+            # Return klines with volatility in acceptable range
+            return [
+                [1234567890000, 49500, 50500, 51000, 49000, 1000] for _ in range(30)
+            ]
+
+        mocker.patch.object(
+            analyzer.client, "get_contracts", return_value=mock_contracts
+        )
+        mocker.patch.object(analyzer.client, "get_ticker", side_effect=mock_get_ticker)
+        mocker.patch.object(analyzer.client, "get_klines", side_effect=mock_get_klines)
+
+        pairs = await analyzer.select_best_pairs(max_pairs=5)
+
+        # Fallback should return both pairs sorted by volume
+        # BTCUSDTM (500K) should be first, ETHUSDTM (200K) second
+        assert len(pairs) == 2
+        assert pairs[0].symbol == "BTCUSDTM"
+        assert pairs[1].symbol == "ETHUSDTM"
+
+    @pytest.mark.asyncio
+    async def test_select_best_pairs_fallback_respects_max_pairs(
+        self, analyzer, mocker
+    ):
+        """Test that fallback respects max_pairs limit."""
+        # Mock contracts
+        mock_contracts = [
+            {"symbol": "BTCUSDTM", "status": "Open"},
+            {"symbol": "ETHUSDTM", "status": "Open"},
+            {"symbol": "XRPUSDTM", "status": "Open"},
+        ]
+
+        # All pairs have low volume (below threshold)
+        async def mock_get_ticker(symbol):
+            volumes = {
+                "BTCUSDTM": "500000.0",  # highest
+                "ETHUSDTM": "300000.0",  # middle
+                "XRPUSDTM": "100000.0",  # lowest
+            }
+            return {
+                "price": "100.0",
+                "turnoverOf24h": volumes.get(symbol, "0"),
+                "ts": 1234567890000,
+            }
+
+        def mock_get_klines(symbol, granularity):
+            return [[1234567890000, 95, 105, 110, 90, 1000] for _ in range(30)]
+
+        mocker.patch.object(
+            analyzer.client, "get_contracts", return_value=mock_contracts
+        )
+        mocker.patch.object(analyzer.client, "get_ticker", side_effect=mock_get_ticker)
+        mocker.patch.object(analyzer.client, "get_klines", side_effect=mock_get_klines)
+
+        pairs = await analyzer.select_best_pairs(max_pairs=2)
+
+        # Fallback should respect max_pairs limit
+        assert len(pairs) == 2
+        assert pairs[0].symbol == "BTCUSDTM"  # highest volume
+        assert pairs[1].symbol == "ETHUSDTM"  # second highest volume
