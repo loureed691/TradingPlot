@@ -124,17 +124,35 @@ class MarketAnalyzer:
         )
 
     async def select_best_pairs(self, max_pairs: int = 5) -> list[PairScore]:
-        """Select the best trading pairs based on volume and volatility."""
+        """Select the best trading pairs based on volume and volatility.
+
+        First attempts to find pairs that meet strict volume and volatility criteria.
+        If no pairs pass the strict filters, falls back to selecting the highest
+        volume pairs regardless of volatility to ensure trading can proceed.
+        """
         pairs = await self.get_tradeable_pairs()
         scored_pairs: list[PairScore] = []
+        all_pairs_with_data: list[tuple[MarketData, PairScore]] = []
+
+        # Track filter statistics for debugging
+        volume_filtered = 0
+        volatility_filtered = 0
 
         for symbol in pairs:
             market_data = await self.get_market_data(symbol)
             if market_data is None:
                 continue
 
+            score = self.calculate_pair_score(market_data)
+            all_pairs_with_data.append((market_data, score))
+
             # Filter by minimum volume
             if market_data.volume_24h < self.config.min_volume_usd:
+                volume_filtered += 1
+                logger.debug(
+                    f"Pair {symbol} filtered: volume ${market_data.volume_24h:,.0f} "
+                    f"< ${self.config.min_volume_usd:,.0f}"
+                )
                 continue
 
             # Filter by volatility range
@@ -142,13 +160,28 @@ class MarketAnalyzer:
                 market_data.volatility < self.config.min_volatility
                 or market_data.volatility > self.config.max_volatility
             ):
+                volatility_filtered += 1
+                logger.debug(
+                    f"Pair {symbol} filtered: volatility {market_data.volatility:.4f} "
+                    f"outside range [{self.config.min_volatility}, {self.config.max_volatility}]"
+                )
                 continue
 
-            score = self.calculate_pair_score(market_data)
             scored_pairs.append(score)
 
         # Sort by total score descending
         scored_pairs.sort(key=lambda x: x.total_score, reverse=True)
+
+        # If no pairs pass strict filters, fall back to best available pairs
+        if not scored_pairs and all_pairs_with_data:
+            logger.warning(
+                f"No pairs met strict criteria (volume_filtered={volume_filtered}, "
+                f"volatility_filtered={volatility_filtered}). "
+                f"Falling back to top {max_pairs} pairs by volume."
+            )
+            # Sort all pairs by volume and return top ones
+            all_pairs_with_data.sort(key=lambda x: x[0].volume_24h, reverse=True)
+            scored_pairs = [score for _, score in all_pairs_with_data[:max_pairs]]
 
         return scored_pairs[:max_pairs]
 
