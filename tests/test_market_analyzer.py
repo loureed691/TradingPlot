@@ -130,6 +130,47 @@ class TestMarketAnalyzer:
         assert market_data.price == 50000.0
 
     @pytest.mark.asyncio
+    async def test_get_market_data_prioritizes_turnover_over_turnoverof24h(
+        self, analyzer, mocker
+    ):
+        """Test that 'turnover' takes priority when both fields exist."""
+        mock_ticker = {
+            "price": "50000.0",
+            "turnover": "3000000.0",  # Should use this
+            "turnoverOf24h": "5000000.0",  # Should ignore this
+            "ts": 1234567890000,
+        }
+        mock_klines = [
+            [1234567890000, 49500, 50500, 51000, 49000, 1000] for _ in range(30)
+        ]
+        mocker.patch.object(analyzer.client, "get_ticker", return_value=mock_ticker)
+        mocker.patch.object(analyzer.client, "get_klines", return_value=mock_klines)
+
+        market_data = await analyzer.get_market_data("BTCUSDTM")
+
+        assert market_data is not None
+        assert market_data.volume_24h == 3000000.0  # Should use 'turnover'
+
+    @pytest.mark.asyncio
+    async def test_get_market_data_handles_zero_turnover(self, analyzer, mocker):
+        """Test that zero turnover value is correctly handled."""
+        mock_ticker = {
+            "price": "50000.0",
+            "turnover": "0",  # Zero but present - should use this, not fall through
+            "ts": 1234567890000,
+        }
+        mock_klines = [
+            [1234567890000, 49500, 50500, 51000, 49000, 1000] for _ in range(30)
+        ]
+        mocker.patch.object(analyzer.client, "get_ticker", return_value=mock_ticker)
+        mocker.patch.object(analyzer.client, "get_klines", return_value=mock_klines)
+
+        market_data = await analyzer.get_market_data("BTCUSDTM")
+
+        assert market_data is not None
+        assert market_data.volume_24h == 0.0
+
+    @pytest.mark.asyncio
     async def test_select_best_pairs_filters_by_volume_in_usd(self, analyzer, mocker):
         """Test that pair selection properly filters by volume in USD."""
         # Mock contracts
