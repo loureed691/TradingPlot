@@ -41,16 +41,16 @@ class TestMarketAnalyzer:
 
     @pytest.mark.asyncio
     async def test_get_market_data_uses_turnover_for_volume(self, analyzer, mocker):
-        """Test that get_market_data uses turnoverOf24h for volume comparison.
+        """Test that get_market_data uses turnover/turnoverOf24h for volume comparison.
 
         This is critical because the volume needs to be in USD/USDT units to
         properly compare against the min_volume_usd threshold. The API returns:
-        - volumeOf24h: volume in base asset (e.g., BTC)
-        - turnoverOf24h: volume in quote currency (e.g., USDT)
+        - volumeOf24h/vol: volume in base asset (e.g., BTC)
+        - turnoverOf24h/turnover: volume in quote currency (e.g., USDT)
 
-        We need turnoverOf24h for USD comparison.
+        We need turnover or turnoverOf24h for USD comparison.
         """
-        # Mock ticker response with both volume fields
+        # Mock ticker response with turnoverOf24h field
         mock_ticker = {
             "price": "50000.0",
             "volumeOf24h": "100.0",  # 100 BTC - should NOT be used
@@ -98,6 +98,36 @@ class TestMarketAnalyzer:
         assert market_data is not None
         # Should default to 0, not use volumeOf24h
         assert market_data.volume_24h == 0.0
+
+    @pytest.mark.asyncio
+    async def test_get_market_data_uses_turnover_field(self, analyzer, mocker):
+        """Test that get_market_data uses 'turnover' field when 'turnoverOf24h' is missing.
+
+        Some versions of the KuCoin API return 'turnover' instead of 'turnoverOf24h'.
+        The code should handle both field names.
+        """
+        # Mock ticker response with 'turnover' field (without Of24h suffix)
+        mock_ticker = {
+            "price": "50000.0",
+            "vol": "100.0",  # 100 BTC - should NOT be used
+            "turnover": "5000000.0",  # 5M USDT - should be used
+            "ts": 1234567890000,
+        }
+
+        # Mock klines for volatility calculation
+        mock_klines = [
+            [1234567890000, 49500, 50500, 51000, 49000, 1000] for _ in range(30)
+        ]
+
+        mocker.patch.object(analyzer.client, "get_ticker", return_value=mock_ticker)
+        mocker.patch.object(analyzer.client, "get_klines", return_value=mock_klines)
+
+        market_data = await analyzer.get_market_data("BTCUSDTM")
+
+        assert market_data is not None
+        # Volume should be 5,000,000 (turnover), not 100 (vol)
+        assert market_data.volume_24h == 5000000.0
+        assert market_data.price == 50000.0
 
     @pytest.mark.asyncio
     async def test_select_best_pairs_filters_by_volume_in_usd(self, analyzer, mocker):
