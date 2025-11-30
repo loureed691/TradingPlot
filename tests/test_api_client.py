@@ -6,7 +6,7 @@ import hmac
 
 import pytest
 
-from kucoin_bot.api.client import KuCoinFuturesClient
+from kucoin_bot.api.client import KuCoinFuturesClient, Position
 from kucoin_bot.config import APIConfig
 
 
@@ -192,3 +192,139 @@ class TestKuCoinFuturesClient:
 
         assert "Invalid currency" in str(exc_info.value)
         assert "Must be 'USDT' or 'XBT'" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_get_24h_stats_uses_ticker_endpoint(self, client, mocker):
+        """Test get_24h_stats uses ticker endpoint (deprecated trade-statistics)."""
+        mock_ticker = mocker.patch.object(
+            client,
+            "get_ticker",
+            return_value={"price": "50000", "volumeOf24h": "1000000"},
+        )
+
+        result = await client.get_24h_stats("XBTUSDTM")
+
+        mock_ticker.assert_called_once_with("XBTUSDTM")
+        assert result["price"] == "50000"
+        assert result["volumeOf24h"] == "1000000"
+
+    @pytest.mark.asyncio
+    async def test_get_klines_with_default_time_range(self, client, mocker):
+        """Test get_klines provides default from/to parameters."""
+        mock_request = mocker.patch.object(
+            client, "_request", return_value={"code": "200000", "data": []}
+        )
+
+        await client.get_klines("XBTUSDTM", granularity=60)
+
+        # Verify the call includes from and to parameters
+        call_args = mock_request.call_args
+        assert call_args[0][0] == "GET"
+        assert call_args[0][1] == "/api/v1/kline/query"
+        params = call_args[1]["params"]
+        assert params["symbol"] == "XBTUSDTM"
+        assert params["granularity"] == 60
+        assert "from" in params
+        assert "to" in params
+        # Default is 24 hours of data
+        assert params["to"] - params["from"] == 24 * 60 * 60 * 1000
+
+    @pytest.mark.asyncio
+    async def test_get_klines_with_custom_time_range(self, client, mocker):
+        """Test get_klines with custom from/to parameters."""
+        mock_request = mocker.patch.object(
+            client, "_request", return_value={"code": "200000", "data": []}
+        )
+
+        start = 1704067200000
+        end = 1704153600000
+
+        await client.get_klines("XBTUSDTM", granularity=3600, start=start, end=end)
+
+        call_args = mock_request.call_args
+        params = call_args[1]["params"]
+        assert params["from"] == start
+        assert params["to"] == end
+
+    @pytest.mark.asyncio
+    async def test_close_position_uses_close_order_param(self, client, mocker):
+        """Test close_position uses closeOrder=true via orders endpoint."""
+        # Mock get_positions to return a position
+        mock_positions = [
+            Position(
+                symbol="XBTUSDTM",
+                side="long",
+                size=100,
+                entry_price=50000.0,
+                leverage=10,
+                unrealized_pnl=50.0,
+                margin=500.0,
+            )
+        ]
+        mocker.patch.object(client, "get_positions", return_value=mock_positions)
+
+        mock_request = mocker.patch.object(
+            client, "_request", return_value={"code": "200000", "data": {}}
+        )
+
+        result = await client.close_position("XBTUSDTM")
+
+        assert result is True
+        call_args = mock_request.call_args
+        assert call_args[0][0] == "POST"
+        assert call_args[0][1] == "/api/v1/orders"
+        data = call_args[1]["data"]
+        assert data["symbol"] == "XBTUSDTM"
+        assert data["side"] == "sell"  # Opposite of long
+        assert data["type"] == "market"
+        assert data["closeOrder"] is True
+
+    @pytest.mark.asyncio
+    async def test_close_position_short_uses_buy_side(self, client, mocker):
+        """Test close_position for short position uses buy side."""
+        mock_positions = [
+            Position(
+                symbol="ETHUSDTM",
+                side="short",
+                size=50,
+                entry_price=3000.0,
+                leverage=5,
+                unrealized_pnl=-20.0,
+                margin=300.0,
+            )
+        ]
+        mocker.patch.object(client, "get_positions", return_value=mock_positions)
+
+        mock_request = mocker.patch.object(
+            client, "_request", return_value={"code": "200000", "data": {}}
+        )
+
+        await client.close_position("ETHUSDTM")
+
+        data = mock_request.call_args[1]["data"]
+        assert data["side"] == "buy"  # Opposite of short
+
+    @pytest.mark.asyncio
+    async def test_close_position_no_position_returns_false(self, client, mocker):
+        """Test close_position returns False when no position found."""
+        mocker.patch.object(client, "get_positions", return_value=[])
+
+        result = await client.close_position("XBTUSDTM")
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_set_leverage_uses_v2_endpoint(self, client, mocker):
+        """Test set_leverage uses correct API v2 endpoint."""
+        mock_request = mocker.patch.object(
+            client, "_request", return_value={"code": "200000", "data": {}}
+        )
+
+        result = await client.set_leverage("XBTUSDTM", 10)
+
+        assert result is True
+        mock_request.assert_called_once_with(
+            "POST",
+            "/api/v2/changeCrossUserLeverage",
+            data={"symbol": "XBTUSDTM", "leverage": "10"},
+        )
