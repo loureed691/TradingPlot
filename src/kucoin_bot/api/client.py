@@ -9,6 +9,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlencode
 
 import aiohttp
 
@@ -123,12 +124,31 @@ class KuCoinFuturesClient:
         params: dict | None = None,
         data: dict | None = None,
     ) -> dict[str, Any]:
-        """Make authenticated API request."""
+        """Make authenticated API request.
+
+        For GET/DELETE requests with query parameters, the signature includes
+        the query string as part of the request path per KuCoin API docs:
+        signature = HMAC-SHA256(timestamp + method + requestPath + queryString, secret)
+
+        For POST/PUT requests with a body, the signature includes the
+        minified JSON body:
+        signature = HMAC-SHA256(timestamp + method + requestPath + body, secret)
+        """
         session = await self._get_session()
         url = f"{self.base_url}{endpoint}"
 
-        body = json.dumps(data) if data else ""
-        headers = self._get_headers(method, endpoint, body)
+        # Build the request path for signature generation
+        # For GET/DELETE: include query string in the path
+        # For POST/PUT: use endpoint as-is and include body
+        if params:
+            query_string = urlencode(params)
+            request_path = f"{endpoint}?{query_string}"
+        else:
+            request_path = endpoint
+
+        # Use minified JSON for POST body (separators without spaces)
+        body = json.dumps(data, separators=(",", ":")) if data else ""
+        headers = self._get_headers(method, request_path, body)
 
         try:
             async with session.request(

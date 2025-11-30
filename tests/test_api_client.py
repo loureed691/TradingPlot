@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import hmac
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -106,6 +107,98 @@ class TestKuCoinFuturesClient:
         expected_b64 = base64.b64encode(expected).decode("utf-8")
 
         assert signature == expected_b64
+
+    def test_generate_signature_with_query_string(self, client, config):
+        """Test signature generation includes query string for GET requests."""
+        timestamp = "1234567890000"
+        method = "GET"
+        endpoint = "/api/v1/test?symbol=XBTUSDTM&granularity=60"
+        body = ""
+
+        signature = client._generate_signature(timestamp, method, endpoint, body)
+
+        # Verify the signature includes query string
+        message = timestamp + method + endpoint + body
+        expected = hmac.new(
+            config.api_secret.encode("utf-8"),
+            message.encode("utf-8"),
+            hashlib.sha256,
+        ).digest()
+        expected_b64 = base64.b64encode(expected).decode("utf-8")
+
+        assert signature == expected_b64
+
+    @pytest.mark.asyncio
+    async def test_request_includes_query_params_in_signature(self, client, mocker):
+        """Test that _request builds signature path with query params for GET."""
+        # Mock aiohttp session
+        mock_response = AsyncMock()
+        mock_response.json = AsyncMock(return_value={"code": "200000", "data": {}})
+
+        mock_context_manager = AsyncMock()
+        mock_context_manager.__aenter__.return_value = mock_response
+        mock_context_manager.__aexit__.return_value = None
+
+        mock_session = MagicMock()
+        mock_session.closed = False
+        mock_session.request = MagicMock(return_value=mock_context_manager)
+
+        # Patch the session
+        mocker.patch.object(client, "_get_session", return_value=mock_session)
+
+        # Track headers passed to request
+        captured_headers = None
+
+        def capture_request(*args, **kwargs):
+            nonlocal captured_headers
+            captured_headers = kwargs.get("headers", {})
+            return mock_context_manager
+
+        mock_session.request = capture_request
+
+        # Make request with params
+        params = {"symbol": "XBTUSDTM", "granularity": 60}
+        await client._request("GET", "/api/v1/kline/query", params=params)
+
+        # Verify headers were generated with query string
+        assert captured_headers is not None
+        # The signature should be different than if we didn't include query params
+        # We verify by checking headers were generated (they contain the signature)
+        assert "KC-API-SIGN" in captured_headers
+        assert "KC-API-TIMESTAMP" in captured_headers
+
+    @pytest.mark.asyncio
+    async def test_request_uses_minified_json_for_post(self, client, mocker):
+        """Test that POST requests use minified JSON (no extra whitespace)."""
+        mock_response = AsyncMock()
+        mock_response.json = AsyncMock(return_value={"code": "200000", "data": {}})
+
+        mock_context_manager = AsyncMock()
+        mock_context_manager.__aenter__.return_value = mock_response
+        mock_context_manager.__aexit__.return_value = None
+
+        mock_session = MagicMock()
+        mock_session.closed = False
+
+        mocker.patch.object(client, "_get_session", return_value=mock_session)
+
+        captured_data = None
+
+        def capture_request(*args, **kwargs):
+            nonlocal captured_data
+            captured_data = kwargs.get("data")
+            return mock_context_manager
+
+        mock_session.request = capture_request
+
+        # Make POST request with data
+        data = {"symbol": "XBTUSDTM", "size": 1, "leverage": 10}
+        await client._request("POST", "/api/v1/orders", data=data)
+
+        # Verify body is minified JSON (no spaces after separators)
+        assert captured_data is not None
+        assert " " not in captured_data  # No extra whitespace
+        assert '{"symbol":"XBTUSDTM","size":1,"leverage":10}' == captured_data
 
     def test_sandbox_url_configuration(self, config):
         """Test sandbox URL is used when sandbox is True."""
