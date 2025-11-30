@@ -37,9 +37,15 @@ class MarketAnalyzer:
                 return None
 
             price = float(ticker.get("price", 0))
-            # Use turnoverOf24h which is the 24h volume in quote currency (USDT)
+            # Use turnover/turnoverOf24h which is the 24h volume in quote currency (USDT)
             # This is needed for proper comparison with min_volume_usd threshold
-            volume = float(ticker.get("turnoverOf24h", 0))
+            # The API may return either "turnover" or "turnoverOf24h" depending on version
+            # Use explicit None checks to handle zero values correctly
+            turnover = ticker.get("turnover")
+            if turnover is not None:
+                volume = float(turnover)
+            else:
+                volume = float(ticker.get("turnoverOf24h", 0))
 
             # Get 24h high/low for volatility calculation
             klines = await self.client.get_klines(symbol, granularity=60)
