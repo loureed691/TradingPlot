@@ -139,8 +139,8 @@ class KuCoinFuturesClient:
 
         # Build the request path for signature generation
         # For GET/DELETE: include query string in the path
-        # For POST/PUT: use endpoint as-is and include body
-        if params:
+        # For POST/PUT: use endpoint as-is (body included separately)
+        if params and method in ("GET", "DELETE"):
             query_string = urlencode(params)
             request_path = f"{endpoint}?{query_string}"
         else:

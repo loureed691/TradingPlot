@@ -197,7 +197,8 @@ class TestKuCoinFuturesClient:
 
         # Verify body is minified JSON (no spaces after separators)
         assert captured_data is not None
-        assert " " not in captured_data  # No extra whitespace
+        assert ", " not in captured_data  # No spaces after commas
+        assert ": " not in captured_data  # No spaces after colons
         assert '{"symbol":"XBTUSDTM","size":1,"leverage":10}' == captured_data
 
     def test_sandbox_url_configuration(self, config):
