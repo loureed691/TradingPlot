@@ -40,21 +40,21 @@ class TestMarketAnalyzer:
         return MarketAnalyzer(client, trading_config)
 
     @pytest.mark.asyncio
-    async def test_get_market_data_uses_turnover_for_volume(self, analyzer, mocker):
-        """Test that get_market_data uses turnover/turnoverOf24h for volume comparison.
+    async def test_get_market_data_uses_turnover24h_for_volume(self, analyzer, mocker):
+        """Test that get_market_data uses turnover24h for volume comparison.
 
         This is critical because the volume needs to be in USD/USDT units to
-        properly compare against the min_volume_usd threshold. The API returns:
-        - volumeOf24h/vol: volume in base asset (e.g., BTC)
-        - turnoverOf24h/turnover: volume in quote currency (e.g., USDT)
+        properly compare against the min_volume_usd threshold. The ticker API returns:
+        - vol24h: volume in base asset (e.g., BTC)
+        - turnover24h: volume in quote currency (e.g., USDT)
 
-        We need turnover or turnoverOf24h for USD comparison.
+        We need turnover24h for USD comparison.
         """
-        # Mock ticker response with turnoverOf24h field
+        # Mock ticker response with turnover24h field (actual KuCoin Futures API format)
         mock_ticker = {
             "price": "50000.0",
-            "volumeOf24h": "100.0",  # 100 BTC - should NOT be used
-            "turnoverOf24h": "5000000.0",  # 5M USDT - should be used
+            "vol24h": "100.0",  # 100 BTC - should NOT be used
+            "turnover24h": "5000000.0",  # 5M USDT - should be used
             "ts": 1234567890000,
         }
 
@@ -66,6 +66,35 @@ class TestMarketAnalyzer:
         ]
 
         # Patch the client methods
+        mocker.patch.object(analyzer.client, "get_ticker", return_value=mock_ticker)
+        mocker.patch.object(analyzer.client, "get_klines", return_value=mock_klines)
+
+        market_data = await analyzer.get_market_data("BTCUSDTM")
+
+        assert market_data is not None
+        # Volume should be 5,000,000 (turnover24h), not 100 (vol24h)
+        assert market_data.volume_24h == 5000000.0
+        assert market_data.price == 50000.0
+
+    @pytest.mark.asyncio
+    async def test_get_market_data_fallback_to_turnoverOf24h(self, analyzer, mocker):
+        """Test that get_market_data falls back to turnoverOf24h when turnover24h is missing.
+
+        Some versions of the contracts API may use turnoverOf24h instead of turnover24h.
+        """
+        # Mock ticker response with turnoverOf24h field (contracts API format)
+        mock_ticker = {
+            "price": "50000.0",
+            "volumeOf24h": "100.0",  # 100 BTC - should NOT be used
+            "turnoverOf24h": "5000000.0",  # 5M USDT - should be used as fallback
+            "ts": 1234567890000,
+        }
+
+        # Mock klines for volatility calculation
+        mock_klines = [
+            [1234567890000, 49500, 50500, 51000, 49000, 1000] for _ in range(30)
+        ]
+
         mocker.patch.object(analyzer.client, "get_ticker", return_value=mock_ticker)
         mocker.patch.object(analyzer.client, "get_klines", return_value=mock_klines)
 
@@ -130,13 +159,12 @@ class TestMarketAnalyzer:
         assert market_data.price == 50000.0
 
     @pytest.mark.asyncio
-    async def test_get_market_data_prioritizes_turnover_over_turnoverof24h(
-        self, analyzer, mocker
-    ):
-        """Test that 'turnover' takes priority when both fields exist."""
+    async def test_get_market_data_prioritizes_turnover24h(self, analyzer, mocker):
+        """Test that 'turnover24h' takes priority over other field names."""
         mock_ticker = {
             "price": "50000.0",
-            "turnover": "3000000.0",  # Should use this
+            "turnover24h": "6000000.0",  # Should use this (highest priority)
+            "turnover": "3000000.0",  # Should ignore this
             "turnoverOf24h": "5000000.0",  # Should ignore this
             "ts": 1234567890000,
         }
@@ -149,14 +177,14 @@ class TestMarketAnalyzer:
         market_data = await analyzer.get_market_data("BTCUSDTM")
 
         assert market_data is not None
-        assert market_data.volume_24h == 3000000.0  # Should use 'turnover'
+        assert market_data.volume_24h == 6000000.0  # Should use 'turnover24h'
 
     @pytest.mark.asyncio
     async def test_get_market_data_handles_zero_turnover(self, analyzer, mocker):
         """Test that zero turnover value is correctly handled."""
         mock_ticker = {
             "price": "50000.0",
-            "turnover": "0",  # Zero but present - should use this, not fall through
+            "turnover24h": "0",  # Zero but present - should use this, not fall through
             "ts": 1234567890000,
         }
         mock_klines = [
@@ -184,13 +212,13 @@ class TestMarketAnalyzer:
             if symbol == "BTCUSDTM":
                 return {
                     "price": "50000.0",
-                    "turnoverOf24h": "5000000.0",  # 5M USD
+                    "turnover24h": "5000000.0",  # 5M USD
                     "ts": 1234567890000,
                 }
             else:
                 return {
                     "price": "1.0",
-                    "turnoverOf24h": "100000.0",  # 100K USD - below threshold
+                    "turnover24h": "100000.0",  # 100K USD - below threshold
                     "ts": 1234567890000,
                 }
 
@@ -277,13 +305,13 @@ class TestMarketAnalyzer:
             if symbol == "BTCUSDTM":
                 return {
                     "price": "50000.0",
-                    "turnoverOf24h": "500000.0",  # 500K USD - below 1M threshold
+                    "turnover24h": "500000.0",  # 500K USD - below 1M threshold
                     "ts": 1234567890000,
                 }
             else:
                 return {
                     "price": "3000.0",
-                    "turnoverOf24h": "200000.0",  # 200K USD - below 1M threshold
+                    "turnover24h": "200000.0",  # 200K USD - below 1M threshold
                     "ts": 1234567890000,
                 }
 
@@ -334,7 +362,7 @@ class TestMarketAnalyzer:
             }
             return {
                 "price": "100.0",
-                "turnoverOf24h": volumes.get(symbol, "0"),
+                "turnover24h": volumes.get(symbol, "0"),
                 "ts": 1234567890000,
             }
 
