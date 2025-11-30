@@ -217,10 +217,16 @@ class TestMarketAnalyzer:
                 }
 
         def mock_get_klines(symbol, granularity):
-            # Return klines with volatility in acceptable range
-            return [
-                [1234567890000, 49500, 50500, 51000, 49000, 1000] for _ in range(30)
-            ]
+            if symbol == "BTCUSDTM":
+                # BTCUSDTM: price=50000, volatility ~4%
+                return [
+                    [1234567890000, 49500, 50500, 51000, 49000, 1000] for _ in range(30)
+                ]
+            elif symbol == "ETHUSDTM":
+                # ETHUSDTM: price=3000, volatility ~4%
+                return [
+                    [1234567890000, 2970, 3030, 3060, 2940, 1000] for _ in range(30)
+                ]
 
         mocker.patch.object(
             analyzer.client, "get_contracts", return_value=mock_contracts
@@ -262,7 +268,8 @@ class TestMarketAnalyzer:
             }
 
         def mock_get_klines(symbol, granularity):
-            return [[1234567890000, 95, 105, 110, 90, 1000] for _ in range(30)]
+            # Use high=105, low=97, price=100.0 for ~8% volatility (within 0.02-0.15)
+            return [[1234567890000, 99, 105, 105, 97, 1000] for _ in range(30)]
 
         mocker.patch.object(
             analyzer.client, "get_contracts", return_value=mock_contracts
